@@ -26,10 +26,10 @@ def parse_args():
         '--gpu',dest='gpu_id', help='GPU device id to use [0]',
         default="0", type=str)
     parser.add_argument(
-        '--snapshot',dest='snapshot', help='Path of model snapshot.', 
+        '--snapshot',dest='snapshot', help='Path of model snapshot.',
         default='output/snapshots/L2CS-gaze360-_loader-180-4/_epoch_55.pkl', type=str)
     parser.add_argument(
-        '--cam',dest='cam_id', help='Camera device id to use [0]',  
+        '--cam',dest='cam_id', help='Camera device id to use [0]',
         default=0, type=int)
     parser.add_argument(
         '--arch',dest='arch',help='Network architecture, can be: ResNet18, ResNet34, ResNet50, ResNet101, ResNet152',
@@ -64,8 +64,8 @@ if __name__ == '__main__':
     cam = args.cam_id
     gpu = select_device(args.gpu_id, batch_size=batch_size)
     snapshot_path = args.snapshot
-   
-    
+
+
 
     transformations = transforms.Compose([
         transforms.Resize(448),
@@ -75,7 +75,7 @@ if __name__ == '__main__':
             std=[0.229, 0.224, 0.225]
         )
     ])
-    
+
     model=getArch(arch, 90)
     print('Loading snapshot.')
     saved_state_dict = torch.load(snapshot_path)
@@ -89,20 +89,28 @@ if __name__ == '__main__':
     idx_tensor = [idx for idx in range(90)]
     idx_tensor = torch.FloatTensor(idx_tensor).cuda(gpu)
     x=0
-  
-    cap = cv2.VideoCapture(cam)
+
+    # cap = cv2.VideoCapture(cam)
+    cap = cv2.VideoCapture("/home/jan/software/web-eye-tracking/code/notebooks/data/karol_telefon_mid.mp4")
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
+    fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+    out = cv2.VideoWriter('output.mp4', fourcc, 20.0, (480, 640))
+    i = 0
     with torch.no_grad():
         while True:
-            success, frame = cap.read()    
-            start_fps = time.time()  
-           
+            success, frame = cap.read()
+            i += 1
+            if i % 50:
+                continue
+            # frame = cv2.resize(frame, (720, 1080), cv2.INTER_AREA)
+            start_fps = time.time()
+
             faces = detector(frame)
-            if faces is not None: 
+            if faces is not None:
                 for box, landmarks, score in faces:
                     if score < .95:
                         continue
@@ -130,31 +138,33 @@ if __name__ == '__main__':
                     im_pil = Image.fromarray(img)
                     img=transformations(im_pil)
                     img  = Variable(img).cuda(gpu)
-                    img  = img.unsqueeze(0) 
-                    
+                    img  = img.unsqueeze(0)
+
                     # gaze prediction
                     gaze_pitch, gaze_yaw = model(img)
-                    
-                    
+
+
                     pitch_predicted = softmax(gaze_pitch)
                     yaw_predicted = softmax(gaze_yaw)
-                    
+
                     # Get continuous predictions in degrees.
                     pitch_predicted = torch.sum(pitch_predicted.data[0] * idx_tensor) * 4 - 180
                     yaw_predicted = torch.sum(yaw_predicted.data[0] * idx_tensor) * 4 - 180
-                    
+
                     pitch_predicted= pitch_predicted.cpu().detach().numpy()* np.pi/180.0
                     yaw_predicted= yaw_predicted.cpu().detach().numpy()* np.pi/180.0
 
-                
-                    
+
+
                     draw_gaze(x_min,y_min,bbox_width, bbox_height,frame,(pitch_predicted,yaw_predicted),color=(0,0,255))
                     cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0,255,0), 1)
             myFPS = 1.0 / (time.time() - start_fps)
             cv2.putText(frame, 'FPS: {:.1f}'.format(myFPS), (10, 20),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
             cv2.imshow("Demo",frame)
-            if cv2.waitKey(1) & 0xFF == 27:
+            if cv2.waitKey(200) & 0xFF == 27:
                 break
-            success,frame = cap.read()  
-    
+            # success,frame = cap.read()
+            frame = cv2.resize(frame, (480, 640), cv2.INTER_AREA)
+            out.write(frame)
+
