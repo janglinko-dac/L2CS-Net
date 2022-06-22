@@ -70,7 +70,9 @@ def parse_args():
 
 def get_ignored_params(model):
     # Generator function that yields ignored params.
-    b = [model.conv1, model.bn1, model.fc_finetune]
+    # tutaj zmieniam na model.module i wtedy są tam te zmienne, do których chcemy się odnośić
+    # b = [model.conv1, model.bn1, model.fc_finetune]
+    b = [model.module.conv1, model.module.bn1, model.module.fc_finetune]
     for i in range(len(b)):
         for module_name, module in b[i].named_modules():
             if 'bn' in module_name:
@@ -80,7 +82,8 @@ def get_ignored_params(model):
 
 def get_non_ignored_params(model):
     # Generator function that yields params that will be optimized.
-    b = [model.layer1, model.layer2, model.layer3, model.layer4]
+    # tutaj zmieniam na model.module i wtedy są tam te zmienne, do których chcemy się odnośić
+    b = [model.module.layer1, model.module.layer2, model.module.layer3, model.module.layer4]
     for i in range(len(b)):
         for module_name, module in b[i].named_modules():
             if 'bn' in module_name:
@@ -90,7 +93,7 @@ def get_non_ignored_params(model):
 
 def get_fc_params(model):
     # Generator function that yields fc layer params.
-    b = [model.fc_yaw_gaze, model.fc_pitch_gaze]
+    b = [model.module.fc_yaw_gaze, model.module.fc_pitch_gaze]
     for i in range(len(b)):
         for module_name, module in b[i].named_modules():
             for name, param in module.named_parameters():
@@ -268,13 +271,17 @@ if __name__ == '__main__':
         folder = os.listdir(args.gazeMpiilabel_dir)
         folder.sort()
         testlabelpathombined = [os.path.join(args.gazeMpiilabel_dir, j) for j in folder]
-        for fold in range(15):
+        for fold in range(1):
             model, pre_url = getArch_weights(args.arch, 28)
             load_filtered_state_dict(model, model_zoo.load_url(pre_url))
             model = nn.DataParallel(model)
             model.to(gpu)
             print('Loading data.')
-            dataset=datasets.Mpiigaze(testlabelpathombined,args.gazeMpiimage_dir, transformations, True, fold)
+            # Zahardcodowałem tutaj angle=42, bo odrzucał wszystkie dane uczące, jak dostawał 0 (ze zmiennej fold, więc coś tu chyba jest nie tak)
+            # Wartość 42 znalazłem dla innego datasetu
+            # Fold to którego usera ominąć, żeby potem robić testowanie na nieznanych danych. Tu jest model per walidacja krzyżowa. 
+            # Ja tu wywalam tego folda (w definicji klasy), chce wszystkie dane
+            dataset=datasets.Mpiigaze(testlabelpathombined,args.gazeMpiimage_dir, transformations, True, 42, fold) 
             train_loader_gaze = DataLoader(
                 dataset=dataset,
                 batch_size=int(batch_size),
@@ -298,9 +305,13 @@ if __name__ == '__main__':
 
             # Optimizer gaze
             optimizer_gaze = torch.optim.Adam([
-                {'params': get_ignored_params(model, args.arch), 'lr': 0},
-                {'params': get_non_ignored_params(model, args.arch), 'lr': args.lr},
-                {'params': get_fc_params(model, args.arch), 'lr': args.lr}
+                # Tu wywala następny błąd, te funkcje nie przyjmują nazwy architektury
+                # {'params': get_ignored_params(model, args.arch), 'lr': 0},
+                # {'params': get_non_ignored_params(model, args.arch), 'lr': args.lr},
+                # {'params': get_fc_params(model, args.arch), 'lr': args.lr}
+                {'params': get_ignored_params(model), 'lr': 0},
+                {'params': get_non_ignored_params(model), 'lr': args.lr},
+                {'params': get_fc_params(model), 'lr': args.lr}
             ], args.lr)
 
             
@@ -375,9 +386,11 @@ if __name__ == '__main__':
 
                 # Save models at numbered epochs.
                 if epoch % 1 == 0 and epoch < num_epochs:
+                    if not os.path.isdir(output+'fold' + str(fold)):
+                        os.mkdir(output+'fold' + str(fold))
                     print('Taking snapshot...',
                         torch.save(model.state_dict(),
-                                    output+'/fold' + str(fold) +'/'+
+                                    output+'fold' + str(fold) +'/'+
                                     '_epoch_' + str(epoch+1) + '.pkl')
                         )
                     

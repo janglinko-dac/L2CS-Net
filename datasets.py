@@ -86,7 +86,8 @@ class Mpiigaze(Dataset):
     self.lines = []
     path=pathorg.copy()
     if train==True:
-      path.pop(fold)
+      # path.pop(fold) # Nie usuwamy użytkownika
+      pass
     else:
       path=path[fold]
     if isinstance(path, list):
