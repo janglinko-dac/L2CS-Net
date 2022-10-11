@@ -83,7 +83,7 @@ source venv/bin/activate
 ```
 * Install required packages:
 ```
-pip install -r requirements.txt  
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116 
 ```
 
 ## Demo
