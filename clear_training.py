@@ -148,8 +148,8 @@ def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, e
         # writer.add_scalar('Val/MAE_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
         return val_sum_loss_pitch_gaze/val_iter_gaze, val_sum_loss_yaw_gaze/val_iter_gaze, val_pitch_mae/val_iter_gaze, val_yaw_mae/val_iter_gaze
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
 
     # Parse arguments
     args = parse_args()
@@ -227,12 +227,12 @@ if __name__ == '__main__':
             train(model, optimizer_gaze, len(train_dataset), train_loader_gaze, reg_criterion, criterion, gpu, idx_tensor, epoch, writer, val_dataloader, writting_frequency=50)
             scheduler.step()
             
-            # eval(model, val_dataloader, reg_criterion, criterion, gpu, idx_tensor, epoch)
-
+            # create the folder to store checkpoints (if not already created)
             if not os.path.isdir(output+args.tb):
-                    os.mkdir(output+args.tb)
-            print('Taking snapshot...',
-                    torch.save(model.state_dict(),
-                                output+'/'+args.tb+'/'+
-                                '_epoch_' + str(epoch+1) + '.pkl')
-                    )
+                os.makedirs(output+args.tb, exist_ok=True)
+
+            # save the current snapshot and print its contents
+            print('Taking snapshot...')
+            snapshot_filepath = os.path.join(output, args.tb, f'_epoch_{epoch + 1}.pkl')
+            torch.save(model.state_dict(), snapshot_filepath)
+            print(f'Snapshot saved under: {snapshot_filepath}')
