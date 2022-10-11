@@ -110,5 +110,3 @@ def git_describe(path=Path(__file__).parent):  # path must be a directory
         return subprocess.check_output(s, shell=True, stderr=subprocess.STDOUT).decode()[:-1]
     except subprocess.CalledProcessError as e:
         return ''  # not a git repository
-        
-

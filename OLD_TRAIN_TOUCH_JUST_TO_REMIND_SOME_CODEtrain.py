@@ -17,6 +17,7 @@ import datasets
 from model import L2CS
 from utils import select_device
 
+import clearml
 
 def parse_args():
     """Parse input arguments."""
@@ -41,6 +42,13 @@ def parse_args():
     )
     parser.add_argument(
         '--gazecapture-ann', help='Annotations filepath.', type=str
+    )
+    # Validation Dataset
+    parser.add_argument(
+        '--validation-dir', help='Root path of the dataset.', type=str
+    )
+    parser.add_argument(
+        '--validation-ann', help='Annotations filepath.', type=str
     )
 
     # Important args -------------------------------------------------------------------------------------------------------
@@ -82,8 +90,6 @@ def parse_args():
 
 def get_ignored_params(model):
     # Generator function that yields ignored params.
-    # tutaj zmieniam na model.module i wtedy są tam te zmienne, do których chcemy się odnośić
-    # b = [model.conv1, model.bn1, model.fc_finetune]
     b = [model.module.conv1, model.module.bn1, model.module.fc_finetune]
     for i in range(len(b)):
         for module_name, module in b[i].named_modules():
@@ -94,7 +100,6 @@ def get_ignored_params(model):
 
 def get_non_ignored_params(model):
     # Generator function that yields params that will be optimized.
-    # tutaj zmieniam na model.module i wtedy są tam te zmienne, do których chcemy się odnośić
     b = [model.module.layer1, model.module.layer2, model.module.layer3, model.module.layer4]
     for i in range(len(b)):
         for module_name, module in b[i].named_modules():
@@ -142,6 +147,9 @@ def getArch_weights(arch, bins):
     return model, pre_url
 
 if __name__ == '__main__':
+    # task = clearml.Task.init(project_name="WET", task_name="Task02")
+    # task.execute_remotely(queue_name='initial')
+
     args = parse_args()
     cudnn.enabled = True
     num_epochs = args.num_epochs
@@ -212,7 +220,6 @@ if __name__ == '__main__':
 
         for epoch in range(num_epochs):
             sum_loss_pitch_gaze = sum_loss_yaw_gaze = iter_gaze = 0
-
 
             for i, (images_gaze, labels_gaze, cont_labels_gaze,name) in enumerate(train_loader_gaze):
                 images_gaze = Variable(images_gaze).cuda(gpu)
@@ -302,10 +309,6 @@ if __name__ == '__main__':
             model = nn.DataParallel(model)
             model.to(gpu)
             print('Loading data.')
-            # Zahardcodowałem tutaj angle=42, bo odrzucał wszystkie dane uczące, jak dostawał 0 (ze zmiennej fold, więc coś tu chyba jest nie tak)
-            # Wartość 42 znalazłem dla innego datasetu
-            # Fold to którego usera ominąć, żeby potem robić testowanie na nieznanych danych. Tu jest model per walidacja krzyżowa.
-            # Ja tu wywalam tego folda (w definicji klasy), chce wszystkie dane
             dataset=datasets.Mpiigaze(testlabelpathombined,args.gazeMpiimage_dir, transformations, True, 42, fold)
             train_loader_gaze = DataLoader(
                 dataset=dataset,
@@ -330,10 +333,6 @@ if __name__ == '__main__':
 
             # Optimizer gaze
             optimizer_gaze = torch.optim.Adam([
-                # Tu wywala następny błąd, te funkcje nie przyjmują nazwy architektury
-                # {'params': get_ignored_params(model, args.arch), 'lr': 0},
-                # {'params': get_non_ignored_params(model, args.arch), 'lr': args.lr},
-                # {'params': get_fc_params(model, args.arch), 'lr': args.lr}
                 {'params': get_ignored_params(model), 'lr': 0},
                 {'params': get_non_ignored_params(model), 'lr': args.lr},
                 {'params': get_fc_params(model), 'lr': args.lr}
@@ -424,18 +423,11 @@ if __name__ == '__main__':
                         )
 
     elif data_set=="gazecapture":
-        writer.add_hparams({"architecture": args.arch, "lr": args.lr, "batch_size": args.batch_size,
-                        "dataset": args.gazecapture_dir, "experiment_name": args.tb}, {'hparams/accuracy': 0})
-
         model, pre_url = getArch_weights(args.arch, 28)
         load_filtered_state_dict(model, model_zoo.load_url(pre_url))
         model = nn.DataParallel(model)
         model.to(gpu)
         print('Loading data.')
-        # Zahardcodowałem tutaj angle=42, bo odrzucał wszystkie dane uczące, jak dostawał 0 (ze zmiennej fold, więc coś tu chyba jest nie tak)
-        # Wartość 42 znalazłem dla innego datasetu
-        # Fold to którego usera ominąć, żeby potem robić testowanie na nieznanych danych. Tu jest model per walidacja krzyżowa.
-        # Ja tu wywalam tego folda (w definicji klasy), chce wszystkie dane
         dataset=datasets.GazeCapture(args.gazecapture_ann, args.gazecapture_dir, transformations)
         train_loader_gaze = DataLoader(
             dataset=dataset,
@@ -443,24 +435,18 @@ if __name__ == '__main__':
             shuffle=True,
             num_workers=4,
             pin_memory=True)
-        val_dataset = datasets.GazeCapture("datasets/GazeCaptureValidation/annotations.txt",
-                                           "datasets/GazeCaptureValidation",
+        val_dataset = datasets.GazeCapture(args.validation_ann,
+                                           args.validation_dir,
                                            transformations)
 
         val_dataloader = DataLoader(
-            dataset=dataset,
-            batch_size=1,
+            dataset=val_dataset,
+            batch_size=2,
             shuffle=True,
             num_workers=4,
             pin_memory=True)
 
         torch.backends.cudnn.benchmark = True
-
-        summary_name = '{}_{}'.format('L2CS-mpiigaze', int(time.time()))
-
-
-        if not os.path.exists(os.path.join(output+'/{}'.format(summary_name),'gazecapture_model')):
-            os.makedirs(os.path.join(output+'/{}'.format(summary_name),'gazecapture_model'))
 
         criterion = nn.CrossEntropyLoss().cuda(gpu)
         reg_criterion = nn.MSELoss().cuda(gpu)
@@ -470,10 +456,6 @@ if __name__ == '__main__':
 
         # Optimizer gaze
         optimizer_gaze = torch.optim.Adam([
-            # Tu wywala następny błąd, te funkcje nie przyjmują nazwy architektury
-            # {'params': get_ignored_params(model, args.arch), 'lr': 0},
-            # {'params': get_non_ignored_params(model, args.arch), 'lr': args.lr},
-            # {'params': get_fc_params(model, args.arch), 'lr': args.lr}
             {'params': get_ignored_params(model), 'lr': 0},
             {'params': get_non_ignored_params(model), 'lr': args.lr},
             {'params': get_fc_params(model), 'lr': args.lr}
@@ -547,21 +529,21 @@ if __name__ == '__main__':
                             sum_loss_yaw_gaze/iter_gaze
                         )
                         )
-
+                    
             # Save models at numbered epochs.
             if epoch % 1 == 0 and epoch < num_epochs:
                 # DO VALIDATION EVERY EPOCH
                 print("DOING VALIDATION")
-                val_sum_loss_pitch_gaze = val_sum_loss_yaw_gaze = val_iter_gaze = 0
+                val_sum_loss_pitch_gaze = val_sum_loss_yaw_gaze = val_iter_gaze = val_yaw_mae = val_pitch_mae = 0
                 with torch.no_grad():
-                    for i, (images_gaze, labels_gaze, cont_labels_gaze) in enumerate(val_dataloader):
-                        images_gaze = Variable(images_gaze).cuda(gpu)
-                        label_pitch_gaze = Variable(labels_gaze[:, 0]).cuda(gpu)
-                        label_yaw_gaze = Variable(labels_gaze[:, 1]).cuda(gpu)
+                    for k, (images_gaze_val, labels_gaze_val, cont_labels_gaze_val) in enumerate(val_dataloader):
+                        images_gaze_val = Variable(images_gaze_val).cuda(gpu)
+                        label_pitch_gaze = Variable(labels_gaze_val[:, 0]).cuda(gpu)
+                        label_yaw_gaze = Variable(labels_gaze_val[:, 1]).cuda(gpu)
                         # Continuous labels
-                        label_pitch_cont_gaze = Variable(cont_labels_gaze[:, 0]).cuda(gpu)
-                        label_yaw_cont_gaze = Variable(cont_labels_gaze[:, 1]).cuda(gpu)
-                        pitch, yaw = model(images_gaze)
+                        label_pitch_cont_gaze = Variable(cont_labels_gaze_val[:, 0]).cuda(gpu)
+                        label_yaw_cont_gaze = Variable(cont_labels_gaze_val[:, 1]).cuda(gpu)
+                        pitch, yaw = model(images_gaze_val)
                         # Cross entropy loss
                         loss_pitch_gaze = criterion(pitch, label_pitch_gaze)
                         loss_yaw_gaze = criterion(yaw, label_yaw_gaze)
@@ -573,6 +555,10 @@ if __name__ == '__main__':
                             torch.sum(pitch_predicted * idx_tensor, 1) * 3 - 42
                         yaw_predicted = \
                             torch.sum(yaw_predicted * idx_tensor, 1) * 3 - 42
+
+                        # Add MAE metrics
+                        val_yaw_mae += abs(label_yaw_cont_gaze - yaw_predicted)
+                        val_pitch_mae += abs(label_pitch_cont_gaze - pitch_predicted)
 
                         loss_reg_pitch = reg_criterion(
                             pitch_predicted, label_pitch_cont_gaze)
@@ -593,12 +579,15 @@ if __name__ == '__main__':
                 
                 print(f"Epoch {epoch} validation losses. Pitch: {val_sum_loss_pitch_gaze/val_iter_gaze}, Yaw: {val_sum_loss_yaw_gaze/val_iter_gaze}")
 
-                writer.add_scalar('Val/epochs_pitch_train', val_sum_loss_pitch_gaze/val_iter_gaze, epoch)
-                writer.add_scalar('Val/epochs_yaw_train', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
-                if not os.path.isdir(output+'gazecapture_model'):
-                    os.mkdir(output+'gazecapture_model')
+                writer.add_scalar('Val/Loss_epochs_pitch', val_sum_loss_pitch_gaze/val_iter_gaze, epoch)
+                writer.add_scalar('Val/Loss_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
+                writer.add_scalar('Val/MAE_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
+                writer.add_scalar('Val/MAE_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
+
+                if not os.path.isdir(output+args.tb):
+                    os.mkdir(output+args.tb)
                 print('Taking snapshot...',
                     torch.save(model.state_dict(),
-                                output+'gazecapture_model'+'/'+
+                                output+args.tb+'/'+
                                 '_epoch_' + str(epoch+1) + '.pkl')
                     )
