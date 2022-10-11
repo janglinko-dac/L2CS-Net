@@ -86,7 +86,10 @@ source venv/bin/activate
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116 
 ```
 
-## Demo
+* Install and Configure ClearML according to this guide: https://clear.ml/docs/latest/docs/getting_started/ds/ds_first_steps/ 
+
+
+## Demo (not necessary for training)
 * Install the face detector:
 ```sh
 pip install git+https://github.com/elliottzheng/face-detection.git@master
@@ -101,16 +104,29 @@ pip install git+https://github.com/elliottzheng/face-detection.git@master
 ```
 This means the demo will run using *L2CSNet_gaze360.pkl* pretrained model
 
+## GazeCapture
 
-## MPIIGaze
+### Preapare datasets
+TBD
+
+## Train
+
+Example CLI command to run training for 3 epochs: 
+
+```
+python clear_training.py --dataset gazecapture --snapshot output/snapshots --gpu 0 --num_epochs 50 --batch_size 12  --lr 0.00001 --arch ResNet18 --gazecapture-ann datasets/E2_DATASET_NORMALIZED/annotations.txt --gazecapture-dir datasets/E2_DATASET_NORMALIZED/ --tb e2_train-04_10_val_660_offset --validation-dir /home/janek/software/L2CS-Net/datasets/DAC_VALIDATION_NORMALIZED_660_OFFSET --validation-ann /home/janek/software/L2CS-Net/datasets/DAC_VALIDATION_NORMALIZED_660_OFFSET/annotations.txt
+```
+
+
+<!-- ## MPIIGaze
 We provide the code for train and test MPIIGaze dataset with leave-one-person-out evaluation.
 
 ### Prepare datasets
 * Download **MPIIFaceGaze dataset** from [here](https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/research/gaze-based-human-computer-interaction/its-written-all-over-your-face-full-face-appearance-based-gaze-estimation).
 * Apply data preprocessing from [here](http://phi-ai.buaa.edu.cn/Gazehub/3D-dataset/).
-* Store the dataset to *datasets/MPIIFaceGaze*.
+* Store the dataset to *datasets/MPIIFaceGaze*. -->
 
-### Train
+<!-- ### Train
 ```
  python train.py \
  --dataset mpiigaze \
@@ -122,9 +138,9 @@ We provide the code for train and test MPIIGaze dataset with leave-one-person-ou
  --alpha 1 \
 
 ```
-This means the code will perform leave-one-person-out training automatically and store the models to *output/snapshots*.
+This means the code will perform leave-one-person-out training automatically and store the models to *output/snapshots*. -->
 
-### Test
+<!-- ### Test
 ```
  python test.py \
  --dataset mpiigaze \
@@ -176,4 +192,4 @@ This means the code will perform training and store the models to *output/snapsh
  --gpu 0 \
 ```
 This means the code will perform testing on snapshot_folder and store the results to *evaluation/L2CS-gaze360*.
-
+ -->
