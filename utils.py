@@ -48,7 +48,7 @@ def draw_gaze(a,b,c,d,image_in, pitchyaw, thickness=2, color=(255, 255, 0),sclae
     cv2.arrowedLine(image_out, tuple(np.round(pos).astype(np.int32)),
                    tuple(np.round([pos[0] + dx, pos[1] + dy]).astype(int)), color,
                    thickness, cv2.LINE_AA, tipLength=0.18)
-    return image_out    
+    return image_out
 
 def select_device(device='', batch_size=None):
     # device = 'cpu' or '0' or '0,1,2,3'
@@ -76,14 +76,14 @@ def select_device(device='', batch_size=None):
     return torch.device('cuda:0' if cuda else 'cpu')
 
 def spherical2cartesial(x):
-    
+
     output = torch.zeros(x.size(0),3)
     output[:,2] = -torch.cos(x[:,1])*torch.cos(x[:,0])
     output[:,0] = torch.cos(x[:,1])*torch.sin(x[:,0])
     output[:,1] = torch.sin(x[:,1])
 
     return output
-    
+
 def compute_angular_error(input,target):
 
     input = spherical2cartesial(input)
@@ -102,7 +102,7 @@ def softmax_temperature(tensor, temperature):
     result = torch.exp(tensor / temperature)
     result = torch.div(result, torch.sum(result, 1).unsqueeze(1).expand_as(result))
     return result
-   
+
 def git_describe(path=Path(__file__).parent):  # path must be a directory
     # return human-readable git description, i.e. v5.0-5-g3e25f1e https://git-scm.com/docs/git-describe
     s = f'git -C {path} describe --tags --long --always'

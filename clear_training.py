@@ -24,29 +24,30 @@ from clear_training_utils import (parse_args,
                                   load_filtered_state_dict)
 
 
+BIN_COUNT = 28
+ANGLE_RANGE = 42  # +/- angle range in degrees
+DEGREES_PER_BIN = 2 * ANGLE_RANGE // BIN_COUNT
 
 
-def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterion, cls_criterion, device, idx_tensor, epoch, writer, val_dataloader, writing_frequency=50):
-    # TODO: Why the train fucntion uses general 'device' while the eval uses 'gpu' for softmax?
-    softmax = nn.Softmax(dim=1).cuda(device)
+def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch, writer, val_dataloader, writing_frequency=50):
     model.train()
     sum_loss_pitch_gaze = sum_loss_yaw_gaze = iter_gaze = 0
     for i, (images_gaze, labels_gaze, cont_labels_gaze) in enumerate(train_dataloader):
         # tensor of shape (N, 3, H, W), where N is the batch size (number of normalized face images),
         # 3 is the number of channels, W is the image height, W is the image width
-        images_gaze = Variable(images_gaze).cuda(device)
+        images_gaze = Variable(images_gaze).cuda(gpu)
 
         # Binned labels
         # label_pitch_gaze and label_yaw_gaze are both tensors of shape (N, ), where N is the batch size
         # they hold index of the angle bin in the range from 0 to 27
-        label_pitch_gaze = Variable(labels_gaze[:, 0]).cuda(device)
-        label_yaw_gaze = Variable(labels_gaze[:, 1]).cuda(device)
+        label_pitch_gaze = Variable(labels_gaze[:, 0]).cuda(gpu)
+        label_yaw_gaze = Variable(labels_gaze[:, 1]).cuda(gpu)
 
         # Continuous labels
         # label_pitch_cont_gaze and label_yaw_cont_gaze are both tensors of shape (N, ), where N is the batch size
         # they hold actual float angle value for a given image in batch
-        label_pitch_cont_gaze = Variable(cont_labels_gaze[:, 0]).cuda(device)
-        label_yaw_cont_gaze = Variable(cont_labels_gaze[:, 1]).cuda(device)
+        label_pitch_cont_gaze = Variable(cont_labels_gaze[:, 0]).cuda(gpu)
+        label_yaw_cont_gaze = Variable(cont_labels_gaze[:, 1]).cuda(gpu)
 
         # pitch and yaw is a (N, 28) tensor and it holds probabilities of the yaw and pitch angles
         # to be within one of the 28 bins
@@ -63,12 +64,13 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
         pitch_predicted = softmax(pitch)
         yaw_predicted = softmax(yaw)
 
-        # TODO: What is this strange math?
         # after the accumulation we end up with pitch_predicted and yaw_predicted tensors of shape (N, )
+        # convert from bin index to actual float angle
+        # there are 28 bins that cover 84 degrees (-42, 42), so each bin covers 3 degrees horizontally and vertically
         pitch_predicted = \
-            torch.sum(pitch_predicted * idx_tensor, 1) * 3 - 42
+            torch.sum(pitch_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
         yaw_predicted = \
-            torch.sum(yaw_predicted * idx_tensor, 1) * 3 - 42
+            torch.sum(yaw_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
 
         # loss_reg_pitch and loss_reg_yaw will hold a single scalar value
         loss_reg_pitch = reg_criterion(
@@ -87,11 +89,10 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
         loss_seq = [loss_pitch_gaze, loss_yaw_gaze]
         # TODO: Is this grad_seq really needed to be se to all 1.0? Can't we just set it to None?
         grad_seq = \
-            [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
+            [torch.tensor(1.0).cuda(gpu) for _ in range(len(loss_seq))]
 
-        # TODO: why we set the gradient to None instead of 0?
+        # when we set the gradient to None instead of 0?
         optimizer.zero_grad(set_to_none=True)
-        # TODO: why this grad_seq is actually never used later on?
         torch.autograd.backward(loss_seq, grad_seq)
         optimizer.step()
 
@@ -119,7 +120,6 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
 
 
 def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch):
-    softmax = nn.Softmax(dim=1).cuda(gpu)
     model.eval()
     val_sum_loss_pitch_gaze = val_sum_loss_yaw_gaze = val_iter_gaze = val_yaw_mae = val_pitch_mae = 0
     with torch.no_grad():
@@ -141,9 +141,9 @@ def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, e
             yaw_predicted = softmax(yaw)
 
             pitch_predicted = \
-                torch.sum(pitch_predicted * idx_tensor, 1) * 3 - 42
+                torch.sum(pitch_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
             yaw_predicted = \
-                torch.sum(yaw_predicted * idx_tensor, 1) * 3 - 42
+                torch.sum(yaw_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
 
             # Add MAE metrics
             val_yaw_mae += abs(label_yaw_cont_gaze.detach() - yaw_predicted.detach())
@@ -177,7 +177,8 @@ if __name__ == '__main__':
 
     # Parse arguments
     args = parse_args()
-    task = clearml.Task.init(project_name="WET", task_name=args.tb)
+    # TODO: Add tags as input arguments
+    task = clearml.Task.init(project_name="WET", task_name=args.tb, tags=[])
 
     # Enable cuda
     cudnn.enabled = True
@@ -188,6 +189,9 @@ if __name__ == '__main__':
     # TODO: what is the impact of alpha on accuracy?
     alpha = args.alpha
     output=args.output
+
+    # define softmax
+    softmax = nn.Softmax(dim=1).cuda(gpu)
 
     # Define transforms
     transformations = transforms.Compose([
@@ -205,7 +209,7 @@ if __name__ == '__main__':
                         "epochs": args.num_epochs, "alpha": args.alpha, "experiment_name": args.tb}, {'hparams/accuracy': 0})
 
     # instantiate model based on pre-trained weights
-    model, pre_url = getArch_weights(args.arch, 28)
+    model, pre_url = getArch_weights(args.arch, BIN_COUNT)
     load_filtered_state_dict(model, model_zoo.load_url(pre_url))
     model = nn.DataParallel(model)
     model.to(gpu)
@@ -237,8 +241,7 @@ if __name__ == '__main__':
         criterion = nn.CrossEntropyLoss().cuda(gpu)
         reg_criterion = nn.MSELoss().cuda(gpu)
         # softmax = nn.Softmax(dim=1).cuda(gpu)
-        # TODO: What is this magic number '28'?
-        idx_tensor = [idx for idx in range(28)]
+        idx_tensor = [idx for idx in range(BIN_COUNT)]
         idx_tensor = Variable(torch.FloatTensor(idx_tensor)).cuda(gpu)
 
         # Optimizer gaze
@@ -257,7 +260,8 @@ if __name__ == '__main__':
                 len(train_dataset),
                 train_loader_gaze,
                 reg_criterion,
-                criterion, gpu,
+                criterion,
+                gpu,
                 idx_tensor,
                 epoch,
                 writer,
