@@ -5,4 +5,4 @@ models/
 __pycache__
 runs/
 .*
-
+*net.egg-info
