@@ -36,8 +36,8 @@ class Gaze360(Dataset):
                     label = np.array(gaze2d.split(",")).astype("float")
                     if abs((label[0]*180/np.pi)) <= angle and abs((label[1]*180/np.pi)) <= angle:
                         self.lines.append(line)
-                    
-                        
+
+
         print("{} items removed from dataset that have an angle > {}".format(self.orig_list_len-len(self.lines), angle))
 
     def __len__(self):
@@ -66,19 +66,19 @@ class Gaze360(Dataset):
         # img=torch.from_numpy(fimg).type(torch.FloatTensor)
 
         if self.transform:
-            img = self.transform(img)        
-        
+            img = self.transform(img)
+
         # Bin values
         bins = np.array(range(-1*self.angle, self.angle, self.binwidth))
         binned_pose = np.digitize([pitch, yaw], bins) - 1
 
         labels = binned_pose
         cont_labels = torch.FloatTensor([pitch, yaw])
-        
+
 
         return img, labels, cont_labels, name
 
-class Mpiigaze(Dataset): 
+class Mpiigaze(Dataset):
   def __init__(self, pathorg, root, transform, train, angle,fold=0):
     self.transform = transform
     self.root = root
@@ -111,9 +111,9 @@ class Mpiigaze(Dataset):
             label = np.array(gaze2d.split(",")).astype("float")
             if abs((label[0]*180/np.pi)) <= 42 and abs((label[1]*180/np.pi)) <= 42:
                 self.lines.append(line)
-   
+
     print("{} items removed from dataset that have an angle > {}".format(self.orig_list_len-len(self.lines),angle))
-        
+
   def __len__(self):
     return len(self.lines)
 
@@ -141,10 +141,10 @@ class Mpiigaze(Dataset):
     # fimg = cv2.resize(fimg, (448, 448))/255.0
     # fimg = fimg.transpose(2, 0, 1)
     # img=torch.from_numpy(fimg).type(torch.FloatTensor)
-    
+
     if self.transform:
-        img = self.transform(img)        
-    
+        img = self.transform(img)
+
     # Bin values
     bins = np.array(range(-42, 42,3))
     binned_pose = np.digitize([pitch, yaw], bins) - 1
@@ -160,120 +160,62 @@ class GazeCapture(Dataset):
     '''
     GazeCapture DataLoader.
     '''
-    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None):
+    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None, flip_signs=False):
         '''
         Initialization.
-        
+
         Parameters
-        
+
         Input:
         annotations: str Annotations filepath
         root: str Path to the dataset base directory.
         transform: torchvision.transforms.Compose Image transform. Can be None
+        flip_signs: flip signs in yaw and pitch labels
         '''
-        
+
         self._root = root
         self._transform = transform
-        
+        self._flip_signs = flip_signs
+
         # Read Annotations [filepath.png pitch yaw]
         with open(annotations, 'r') as f:
             self._data = f.readlines()
         # Remove \n from the end of each line and empty last line
         self._data = list(map(str.strip, self._data))[:-1]
-    
+
     def __len__(self):
         # Length of annotations
         return len(self._data)
-    
+
     def __getitem__(self, idx):
         # Get the annotation
         annotation = self._data[idx]
-        
+
         # Split [filepath.png yaw pitch]
         img_path, yaw, pitch = annotation.split(" ")
-        
+
         # Convert to Tensor
         label = np.array([pitch, yaw]).astype("float")
+        if self._flip_signs:
+            label[0] *= -1
+            label[1] *= -1
         label = torch.from_numpy(label).type(torch.FloatTensor)
-        
+
         # Load image
         img = Image.open(os.path.join(self._root, img_path))
         # Apply Transform if not None
         if self._transform:
             img = self._transform(img)
-            
+
         # Convert yaw and pitch to angles
         pitch = label[0] * 180 / np.pi
         yaw = label[1] * 180 / np.pi
-        
+
         # Binarize Values
-        bins = np.array(range(-42, 42,3))
+        bins = np.array(range(-42, 42, 3))
         binned_pose = np.digitize([pitch, yaw], bins) - 1
 
         labels = binned_pose
         cont_labels = torch.FloatTensor([pitch, yaw])
-        
-        return img, labels, cont_labels
 
-class Wet(Dataset):
-    '''
-    GazeCapture DataLoader.
-    '''
-    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None):
-        '''
-        Initialization.
-        
-        Parameters
-        
-        Input:
-        annotations: str Annotations filepath
-        root: str Path to the dataset base directory.
-        transform: torchvision.transforms.Compose Image transform. Can be None
-        '''
-        
-        self._root = root
-        self._transform = transform
-        
-        # Read Annotations [filepath.png pitch yaw]
-        with open(annotations, 'r') as f:
-            self._data = f.readlines()
-        # Remove \n from the end of each line and empty last line
-        self._data = list(map(str.strip, self._data))[:-1]
-    
-    def __len__(self):
-        # Length of annotations
-        return len(self._data)
-    
-    def __getitem__(self, idx):
-        # Get the annotation
-        annotation = self._data[idx]
-        
-        # Split [filepath.png yaw pitch]
-        img_path, yaw, pitch = annotation.split(" ")
-        
-        # Convert to Tensor
-        label = np.array([pitch, yaw]).astype("float")
-        # Flip signs
-        # label[0] *= -1
-        # label[1] *= -1
-
-        label = torch.from_numpy(label).type(torch.FloatTensor)
-        
-        # Load image
-        img = Image.open(os.path.join(self._root, img_path))
-        # Apply Transform if not None
-        if self._transform:
-            img = self._transform(img)
-            
-        # Convert yaw and pitch to angles
-        pitch = label[0] * 180 / np.pi
-        yaw = label[1] * 180 / np.pi
-        
-        # Binarize Values
-        bins = np.array(range(-42, 42,3))
-        binned_pose = np.digitize([pitch, yaw], bins) - 1
-
-        labels = binned_pose
-        cont_labels = torch.FloatTensor([pitch, yaw])
-        
         return img, labels, cont_labels

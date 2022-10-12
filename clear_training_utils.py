@@ -1,8 +1,6 @@
 import argparse
 import torchvision
 
-
-
 from model import L2CS
 
 
@@ -68,6 +66,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
 def get_ignored_params(model):
     # Generator function that yields ignored params.
     b = [model.module.conv1, model.module.bn1, model.module.fc_finetune]
@@ -77,6 +76,7 @@ def get_ignored_params(model):
                 module.eval()
             for name, param in module.named_parameters():
                 yield param
+
 
 def get_non_ignored_params(model):
     # Generator function that yields params that will be optimized.
@@ -88,6 +88,7 @@ def get_non_ignored_params(model):
             for name, param in module.named_parameters():
                 yield param
 
+
 def get_fc_params(model):
     # Generator function that yields fc layer params.
     b = [model.module.fc_yaw_gaze, model.module.fc_pitch_gaze]
@@ -95,6 +96,7 @@ def get_fc_params(model):
         for module_name, module in b[i].named_modules():
             for name, param in module.named_parameters():
                 yield param
+
 
 def load_filtered_state_dict(model, snapshot):
     # By user apaszke from discuss.pytorch.org
