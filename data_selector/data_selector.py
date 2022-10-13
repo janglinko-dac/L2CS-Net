@@ -141,6 +141,33 @@ class DataSelector():
 
         return min_pitch, max_pitch, min_yaw, max_yaw, user_ids, total_number_of_images
 
+    @staticmethod
+    def __generate_symlinks_and_annotations(output_dataset_folder: str, image_data: list) -> None:
+        """Generates symbolic links to images and annotations txt file necessary for training
+
+        Args:
+            output_dataset_folder: target folder where to place symbolic links annotations
+            image_data: list of ImageData objects
+        """
+
+        # generate symbolic links & annotations files train and validation datasets
+        with open(os.path.join(output_dataset_folder, DataSelector.ANNOTATIONS_FILENAME), 'w') as f:
+            for single_image_data in image_data:
+                src = os.path.abspath(single_image_data.image_path)
+                dst = os.path.abspath(os.path.join(output_dataset_folder, single_image_data.user_id, os.path.basename(single_image_data.image_path)))
+
+                # create parent folder for the symlink if it does not exist
+                dst_parent = Path(dst).parent
+                if not os.path.isdir(dst_parent):
+                    Path(dst_parent).mkdir(parents=True, exist_ok=True)
+
+                # create symbolic link to the image data
+                os.symlink(src=src, dst=dst)
+
+                # update annotations file
+                image_path = f'{single_image_data.user_id}/{os.path.basename(single_image_data.image_path)}'
+                f.write(f'{image_path} {single_image_data.pitch} {single_image_data.yaw}\n')
+
     def generate_dataset(self, train_dataset_folder: str, val_dataset_folder: str) -> None:
         """Generates new train and validation dataset based on the configuration file
 
@@ -184,20 +211,5 @@ class DataSelector():
             val_image_data = [image_data for image_data in self._image_data if image_data.user_id in val_user_ids]
 
             # generate symbolic links & annotations files train and validation datasets
-            with open(os.path.join(train_dataset_folder, DataSelector.ANNOTATIONS_FILENAME), 'w') as f:
-                for image_data in train_image_data:
-                    src = image_data.image_path
-                    dst = os.path.join(train_dataset_folder, image_data.user_id, os.path.basename(image_data.image_path))
-                    # os.symlink(src=src, dst=dst)
-                    print(src, dst)
-                    image_path = f'{image_data.user_id}/{os.path.basename(image_data.image_path)}'
-                    f.write(f'{image_path} {image_data.pitch} {image_data.yaw}\n')
-
-            with open(os.path.join(val_dataset_folder, DataSelector.ANNOTATIONS_FILENAME), 'w') as f:
-                for image_data in val_image_data:
-                    src = image_data.image_path
-                    dst = os.path.join(val_dataset_folder, image_data.user_id, os.path.basename(image_data.image_path))
-                    # os.symlink(src=src, dst=dst)
-                    print(src, dst)
-                    image_path = f'{image_data.user_id}/{os.path.basename(image_data.image_path)}'
-                    f.write(f'{image_path} {image_data.pitch} {image_data.yaw}\n')
+            self.__generate_symlinks_and_annotations(train_dataset_folder, train_image_data)
+            self.__generate_symlinks_and_annotations(val_dataset_folder, val_image_data)
