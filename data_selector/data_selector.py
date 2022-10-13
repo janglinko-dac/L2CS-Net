@@ -2,12 +2,13 @@ import math
 from operator import attrgetter
 import os
 from pathlib import Path
-from pydoc import ispath
 import random
 from typing import Tuple
 import yaml
 
 from data_selector.image_data import ImageData
+
+
 class DataSelector():
     """Class that lets you generate bash scripts that will create "virtual" folders
     that can be used by the L2CS-Net data loaders. No data is copied anywhere, the original
@@ -44,7 +45,7 @@ class DataSelector():
         self._image_data = self.__generate_data_list()
 
     @staticmethod
-    def get_annotations_filepath(data_folderpath: str) -> str:
+    def __get_annotations_filepath(data_folderpath: str) -> str:
         """Extracts path to the annotations file corresponding to the data folder
 
         Args:
@@ -59,7 +60,7 @@ class DataSelector():
         return annotations_filepath
 
     @staticmethod
-    def get_labels(image_path: str, annotations_filepath: str) -> Tuple[float, float]:
+    def __get_labels(image_path: str, annotations_filepath: str) -> Tuple[float, float]:
         """Extracts expected pitch & yaw labels for specific image path
 
         Args:
@@ -96,7 +97,7 @@ class DataSelector():
         # images = [x for x in glob(f"{self._data_folders_dict['data_folders']}/*.png")]
         for data_folder in self._data_folders_dict['data_folders']:
             # extract annotations filepath
-            annotations_filepath = self.get_annotations_filepath(data_folder)
+            annotations_filepath = self.__get_annotations_filepath(data_folder)
             for root, _, files in os.walk(data_folder):
                 for file in files:
                     if file.endswith('.png'):
@@ -105,7 +106,7 @@ class DataSelector():
                         # extract user ID
                         user_id = os.path.basename(Path(image_path).parent)
                         # extract yaw and pitch label
-                        pitch, yaw = self.get_labels(image_path, annotations_filepath)
+                        pitch, yaw = self.__get_labels(image_path, annotations_filepath)
                         single_image_data = ImageData(image_path=image_path, user_id=user_id, pitch=pitch, yaw=yaw)
                         image_data.append(single_image_data)
 
