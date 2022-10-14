@@ -128,7 +128,8 @@ class DataSelector():
         """Calculates a few statistics of the data
 
         Returns:
-            min. value of pitch across the data, max. value of pitch, min. value of yaw, max. value of yaw
+            min. value of pitch across the data, max. value of pitch, min. value of yaw, max. value of yaw,
+            user IDs, total number of images
         """
 
         min_pitch = math.degrees(min(self._image_data, key=attrgetter('pitch')).pitch)
