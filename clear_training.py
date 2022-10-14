@@ -100,23 +100,24 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
 
         # evaluate model on the validation data and log some values
         if (i+1) % writing_frequency == 0:
-            writer.add_scalar('Loss/pitch_train', sum_loss_pitch_gaze/iter_gaze, epoch*train_dataset_length//batch_size + i)
-            writer.add_scalar('Loss/yaw_train', sum_loss_yaw_gaze/iter_gaze, epoch*train_dataset_length//batch_size + i)
-            print('Epoch [%d/%d], Iter [%d/%d] Losses: '
-                'Gaze Yaw %.4f,Gaze Pitch %.4f' % (
-                    epoch+1,
-                    num_epochs,
-                    i+1,
-                    train_dataset_length//batch_size,
-                    sum_loss_pitch_gaze/iter_gaze,
-                    sum_loss_yaw_gaze/iter_gaze
-                )
-                )
+            writer.add_scalar('Train_Loss/pitch', sum_loss_pitch_gaze/iter_gaze, epoch*train_dataset_length//batch_size + i)
+            writer.add_scalar('Train_Loss/yaw', sum_loss_yaw_gaze/iter_gaze, epoch*train_dataset_length//batch_size + i)
+
             val_loss_pitch, val_loss_yaw, val_pitch_mae, val_yaw_mae = eval(model, val_dataloader, reg_criterion, criterion, gpu, idx_tensor, epoch)
-            writer.add_scalar('Val/Loss_pitch', val_loss_pitch, epoch*train_dataset_length//batch_size + i)
-            writer.add_scalar('Val/Loss_yaw', val_loss_yaw, epoch*train_dataset_length//batch_size + i)
-            writer.add_scalar('Val/MAE_pitch', val_pitch_mae, epoch*train_dataset_length//batch_size + i)
-            writer.add_scalar('Val/MAE_yaw', val_yaw_mae, epoch*train_dataset_length//batch_size + i)
+            writer.add_scalar('Val_Loss/pitch', val_loss_pitch, epoch*train_dataset_length//batch_size + i)
+            writer.add_scalar('Val_Loss/yaw', val_loss_yaw, epoch*train_dataset_length//batch_size + i)
+            writer.add_scalar('Val_MAE/pitch', val_pitch_mae, epoch*train_dataset_length//batch_size + i)
+            writer.add_scalar('Val_MAE/yaw', val_yaw_mae, epoch*train_dataset_length//batch_size + i)
+
+    print(f"Epoch {epoch + 1}/{num_epochs} train losses. Yaw: {sum_loss_yaw_gaze/iter_gaze}, Pitch: {sum_loss_pitch_gaze/iter_gaze}")
+
+    # when a single epoch is complete, evaluate the trained model on validation dataset
+    val_loss_pitch, val_loss_yaw, val_pitch_mae, val_yaw_mae = eval(model, val_dataloader, reg_criterion, criterion, gpu, idx_tensor, epoch)
+
+    print(f"Epoch {epoch + 1}/{num_epochs} validation losses. Yaw: {val_loss_yaw}, Pitch: {val_loss_pitch}")
+    print(f"Epoch {epoch + 1}/{num_epochs} validation MAE. Yaw: {val_yaw_mae}, Pitch: {val_pitch_mae}")
+
+    return val_loss_pitch.item(), val_loss_yaw.item(), val_pitch_mae.item(), val_yaw_mae.item()
 
 
 def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch):
@@ -163,13 +164,6 @@ def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, e
 
             val_iter_gaze += 1
 
-        print(f"Epoch {epoch} validation losses. Yaw: {val_sum_loss_yaw_gaze/val_iter_gaze}  Pitch: {val_sum_loss_pitch_gaze/val_iter_gaze}")
-        print(f"Epoch {epoch} validation MAE. Yaw: {val_yaw_mae/val_iter_gaze}  Pitch: {val_pitch_mae/val_iter_gaze}")
-
-        # writer.add_scalar('Val/Loss_epochs_pitch', val_sum_loss_pitch_gaze/val_iter_gaze, epoch)
-        # writer.add_scalar('Val/Loss_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
-        # writer.add_scalar('Val/MAE_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
-        # writer.add_scalar('Val/MAE_epochs_yaw', val_sum_loss_yaw_gaze/val_iter_gaze, epoch)
         return val_sum_loss_pitch_gaze/val_iter_gaze, val_sum_loss_yaw_gaze/val_iter_gaze, val_pitch_mae/val_iter_gaze, val_yaw_mae/val_iter_gaze
 
 
@@ -254,7 +248,13 @@ if __name__ == '__main__':
         scheduler = MultiStepLR(optimizer_gaze, milestones=[30, 40], gamma=0.1) # Old parameters for Gaze Capture, steps should be bigger for smaller dataset
 
         for epoch in range(num_epochs):
-            train(
+
+            is_best_model = False
+
+            val_loss_pitch, \
+            val_loss_yaw, \
+            val_pitch_mae, \
+            val_yaw_mae = train(
                 model,
                 optimizer_gaze,
                 len(train_dataset),
@@ -269,6 +269,19 @@ if __name__ == '__main__':
                 writing_frequency=50)
             scheduler.step()
 
+            if epoch == 0:
+                min_val_pitch_yaw_mae = (val_pitch_mae + val_yaw_mae) / 2
+                is_best_model = True
+            else:
+                val_loss_pitch_yaw = (val_loss_pitch + val_loss_yaw) / 2
+                val_pitch_yaw_mae = (val_pitch_mae + val_yaw_mae) / 2
+
+                # give MAE a priority when selecting best model
+                if val_pitch_mae < min_val_pitch_yaw_mae:
+                    print(f'Found new best model with pitch & yaw MAE: {val_pitch_yaw_mae}')
+                    min_val_pitch_yaw_mae = val_pitch_mae
+                    is_best_model = True
+
             # create the folder to store checkpoints (if not already created)
             if not os.path.isdir(output+args.tb):
                 os.makedirs(output+args.tb, exist_ok=True)
@@ -278,6 +291,10 @@ if __name__ == '__main__':
             snapshot_filepath = os.path.join(output, args.tb, f'_epoch_{epoch + 1}.pkl')
             torch.save(model.state_dict(), snapshot_filepath)
             print(f'Snapshot saved under: {snapshot_filepath}')
+
+            if is_best_model:
+                print(f'Best model found @ epoch {epoch + 1}')
+                torch.save(model.state_dict(), os.path.join(output, args.tb, f'best.pkl'))
 
     else:
         raise ValueError(f'Unsupported dataset type: {data_set}')

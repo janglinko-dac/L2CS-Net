@@ -21,7 +21,7 @@ Ahmed A.Abdelrahman, Thorsten Hempel, Aly Khalifa, Ayoub Al-Hamadi, ICIP, 2022, 
 If you use any part of our code or data, please cite our paper.
 ```
 @misc{AAbdelrahman2022L2CSNetFG,
-      title={L2CS-Net: Fine-Grained Gaze Estimation in Unconstrained Environments}, 
+      title={L2CS-Net: Fine-Grained Gaze Estimation in Unconstrained Environments},
       author={Ahmed A.Abdelrahman, Thorsten Hempel, Aly Khalifa, Ayoub Al-Hamadi},
       year={2022},
       eprint={2203.03339},
@@ -31,8 +31,8 @@ If you use any part of our code or data, please cite our paper.
 ```
 ### Evaluation
 
-<div align="center"> 
-  
+<div align="center">
+
 <table>
 <tr><th>Evaluation on MPIIGaze dataset</th><th>Evaluation on Gaze360 dataset</th></tr>
 <tr><td>
@@ -51,11 +51,11 @@ If you use any part of our code or data, please cite our paper.
 |              CA-Net             |        4.1       |
 |             AGE-Net             |       4.09       |
 |             **L2CS-Net** **(<img src="https://render.githubusercontent.com/render/math?math=\beta"> =2)**        |   **3.96**       |
-|             **L2CS-Net** **(<img src="https://render.githubusercontent.com/render/math?math=\beta"> =1)**        |   **3.92**   | 
+|             **L2CS-Net** **(<img src="https://render.githubusercontent.com/render/math?math=\beta"> =1)**        |   **3.92**   |
 
-  
+
 </td><td>
-  
+
  |      **Methods**     | **Front 180** | **Front Facing** |
 |:--------------------:|:-------------:|:----------------:|
 |       FullFace       |     14.99     |        N/A       |
@@ -66,11 +66,11 @@ If you use any part of our code or data, please cite our paper.
 |  **L2CS-Net**  **(<img src="https://render.githubusercontent.com/render/math?math=\beta"> =2)**  |     **10.54**     |       **9.13**       |
 |  **L2CS-Net**  **(<img src="https://render.githubusercontent.com/render/math?math=\beta"> =1)** |     **10.41**     |       **9.01**       |
 
-  
+
  </td></tr> </table>
-  
+
 </div>
- 
+
 ___
 
 ## Installation
@@ -83,10 +83,13 @@ source venv/bin/activate
 ```
 * Install required packages:
 ```
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116 
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 ```
-
-* Install and Configure ClearML according to this guide: https://clear.ml/docs/latest/docs/getting_started/ds/ds_first_steps/ 
+* Install the code in editable mode
+```
+pip install -e .
+```
+* Install and Configure ClearML according to this guide: https://clear.ml/docs/latest/docs/getting_started/ds/ds_first_steps/
 
 
 ## Demo (not necessary for training)
@@ -111,7 +114,7 @@ TBD
 
 ## Train
 
-Example CLI command to run training for 3 epochs: 
+Example CLI command to run training for 3 epochs:
 
 ```
 python clear_training.py --dataset gazecapture --snapshot output/snapshots --gpu 0 --num_epochs 50 --batch_size 12  --lr 0.00001 --arch ResNet18 --gazecapture-ann datasets/E2_DATASET_NORMALIZED/annotations.txt --gazecapture-dir datasets/E2_DATASET_NORMALIZED/ --tb e2_train-04_10_val_660_offset --validation-dir /home/janek/software/L2CS-Net/datasets/DAC_VALIDATION_NORMALIZED_660_OFFSET --validation-ann /home/janek/software/L2CS-Net/datasets/DAC_VALIDATION_NORMALIZED_660_OFFSET/annotations.txt
