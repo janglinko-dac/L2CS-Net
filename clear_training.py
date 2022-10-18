@@ -1,3 +1,4 @@
+from math import gamma
 import clearml
 import os
 
@@ -24,12 +25,8 @@ from clear_training_utils import (parse_args,
                                   load_filtered_state_dict)
 
 
-BIN_COUNT = 28
-ANGLE_RANGE = 42  # +/- angle range in degrees
-DEGREES_PER_BIN = 2 * ANGLE_RANGE // BIN_COUNT
-
-
 def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch, writer, val_dataloader, writing_frequency=50):
+
     model.train()
     sum_loss_pitch_gaze = sum_loss_yaw_gaze = iter_gaze = 0
     for i, (images_gaze, labels_gaze, cont_labels_gaze) in enumerate(train_dataloader):
@@ -64,13 +61,14 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
         pitch_predicted = softmax(pitch)
         yaw_predicted = softmax(yaw)
 
-        # after the accumulation we end up with pitch_predicted and yaw_predicted tensors of shape (N, )
-        # convert from bin index to actual float angle
-        # there are 28 bins that cover 84 degrees (-42, 42), so each bin covers 3 degrees horizontally and vertically
+        # calculate predicted pitch & yaw angle for every image in the batch
+        # pitch_predicted & yaw_predicted will be both tensors of shape (N, ) holding values in degrees
+        # NOTE: torch.sum(pitch_predicted * idx_tensor, 1) calculates the expected value of a bin index
+        #       (which in general will not be an integer value)
         pitch_predicted = \
-            torch.sum(pitch_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
+            torch.sum(pitch_predicted * idx_tensor, 1) * pitch_degrees_per_bin - pitch_angle_range
         yaw_predicted = \
-            torch.sum(yaw_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
+            torch.sum(yaw_predicted * idx_tensor, 1) * yaw_degrees_per_bin - yaw_angle_range
 
         # loss_reg_pitch and loss_reg_yaw will hold a single scalar value
         loss_reg_pitch = reg_criterion(
@@ -80,7 +78,10 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
 
         # Total loss
         loss_pitch_gaze += alpha * loss_reg_pitch
+        # punish the network for missing the correct pitch angle more/less than yaw
+        loss_pitch_gaze *= beta
         loss_yaw_gaze += alpha * loss_reg_yaw
+        loss_yaw_gaze *= gamma
 
         sum_loss_pitch_gaze += loss_pitch_gaze.detach()
         sum_loss_yaw_gaze += loss_yaw_gaze.detach()
@@ -142,9 +143,9 @@ def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, e
             yaw_predicted = softmax(yaw)
 
             pitch_predicted = \
-                torch.sum(pitch_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
+                torch.sum(pitch_predicted * idx_tensor, 1) * pitch_degrees_per_bin - pitch_angle_range
             yaw_predicted = \
-                torch.sum(yaw_predicted * idx_tensor, 1) * DEGREES_PER_BIN - ANGLE_RANGE
+                torch.sum(yaw_predicted * idx_tensor, 1) * yaw_degrees_per_bin - yaw_angle_range
 
             # Add MAE metrics
             val_yaw_mae += abs(label_yaw_cont_gaze.detach() - yaw_predicted.detach())
@@ -172,7 +173,7 @@ if __name__ == '__main__':
     # Parse arguments
     args = parse_args()
     # TODO: Add tags as input arguments
-    task = clearml.Task.init(project_name="WET", task_name=args.tb, tags=[])
+    task = clearml.Task.init(project_name="WET", task_name=args.tb, tags=args.cml_tags)
 
     # Enable cuda
     cudnn.enabled = True
@@ -181,8 +182,25 @@ if __name__ == '__main__':
     gpu = select_device(args.gpu_id, batch_size=args.batch_size)
     data_set=args.dataset
     # TODO: what is the impact of alpha on accuracy?
+
+    # training loss parameters
     alpha = args.alpha
-    output=args.output
+    beta = args.beta
+    gamma = args.gamma
+
+    # network parameters
+    pitch_angle_range = args.pitch_angle_range
+    yaw_angle_range = args.yaw_angle_range
+    pitch_bin_count = args.pitch_bin_count
+    yaw_bin_count = args.yaw_bin_count
+
+    assert pitch_angle_range == yaw_angle_range, 'Currently we only support same angle ranges for pitch and yaw'
+    assert pitch_bin_count == yaw_bin_count, 'Currently we only support same bin count for pitch and yaw'
+
+    pitch_degrees_per_bin = 2 * pitch_angle_range // pitch_bin_count
+    yaw_degrees_per_bin = 2 * yaw_angle_range // yaw_bin_count
+
+    output = args.output
 
     # define softmax
     softmax = nn.Softmax(dim=1).cuda(gpu)
@@ -203,7 +221,7 @@ if __name__ == '__main__':
                         "epochs": args.num_epochs, "alpha": args.alpha, "experiment_name": args.tb}, {'hparams/accuracy': 0})
 
     # instantiate model based on pre-trained weights
-    model, pre_url = getArch_weights(args.arch, BIN_COUNT)
+    model, pre_url = getArch_weights(args.arch, pitch_bin_count)
     load_filtered_state_dict(model, model_zoo.load_url(pre_url))
     model = nn.DataParallel(model)
     model.to(gpu)
@@ -212,15 +230,24 @@ if __name__ == '__main__':
 
         train_dataset=datasets.GazeCapture(args.gazecapture_ann,
                                            args.gazecapture_dir,
-                                           transformations)
+                                           transformations,
+                                           pitch_angle_range=pitch_angle_range,
+                                           yaw_angle_range=yaw_angle_range,
+                                           pitch_degrees_per_bin=pitch_degrees_per_bin,
+                                           yaw_degrees_per_bin=yaw_degrees_per_bin)
 
         val_dataset = datasets.GazeCapture(args.validation_ann,
                                            args.validation_dir,
-                                           transformations)
+                                           transformations,
+                                           pitch_angle_range=pitch_angle_range,
+                                           yaw_angle_range=yaw_angle_range,
+                                           pitch_degrees_per_bin=pitch_degrees_per_bin,
+                                           yaw_degrees_per_bin=yaw_degrees_per_bin)
 
         train_loader_gaze = DataLoader(dataset=train_dataset,
                                        batch_size=int(batch_size),
                                        shuffle=True,
+                                       generator=torch.Generator().manual_seed(42),
                                        num_workers=1,
                                        pin_memory=True)
 
@@ -235,7 +262,7 @@ if __name__ == '__main__':
         criterion = nn.CrossEntropyLoss().cuda(gpu)
         reg_criterion = nn.MSELoss().cuda(gpu)
         # softmax = nn.Softmax(dim=1).cuda(gpu)
-        idx_tensor = [idx for idx in range(BIN_COUNT)]
+        idx_tensor = [idx for idx in range(pitch_bin_count)]
         idx_tensor = Variable(torch.FloatTensor(idx_tensor)).cuda(gpu)
 
         # Optimizer gaze

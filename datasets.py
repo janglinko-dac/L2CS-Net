@@ -160,7 +160,8 @@ class GazeCapture(Dataset):
     '''
     GazeCapture DataLoader.
     '''
-    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None, flip_signs=False):
+    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None, flip_signs=False,
+        pitch_angle_range: int = 42, yaw_angle_range: int = 42, pitch_degrees_per_bin: int = 3, yaw_degrees_per_bin: int = 3):
         '''
         Initialization.
 
@@ -173,9 +174,16 @@ class GazeCapture(Dataset):
         flip_signs: flip signs in yaw and pitch labels
         '''
 
+        assert pitch_angle_range == yaw_angle_range, 'Currently only same angle ranges for pitch and yaw are supported'
+        assert pitch_degrees_per_bin == yaw_degrees_per_bin, 'Currently only same bin counts for pitch and yaw are supported'
+
         self._root = root
         self._transform = transform
         self._flip_signs = flip_signs
+        self._pitch_angle_range = pitch_angle_range
+        self._yaw_angle_range = yaw_angle_range
+        self._pitch_degrees_per_bin = pitch_degrees_per_bin
+        self._yaw_degrees_per_bin = yaw_degrees_per_bin
 
         # Read Annotations [filepath.png pitch yaw]
         with open(annotations, 'r') as f:
@@ -212,7 +220,7 @@ class GazeCapture(Dataset):
         yaw = label[1] * 180 / np.pi
 
         # Binarize Values
-        bins = np.array(range(-42, 42, 3))
+        bins = np.array(range(-self._pitch_angle_range, self._pitch_angle_range, self._pitch_degrees_per_bin))
         binned_pose = np.digitize([pitch, yaw], bins) - 1
 
         labels = binned_pose
