@@ -63,6 +63,21 @@ def parse_args():
     # Tensorboard args
     parser.add_argument(
         '--tb', help='name of the output folder that will be containing data about an experiment.', required=True)
+    parser.add_argument(
+        '--cml-tags', nargs='*', help='tags that will be used by ClearML', required=True)
+    parser.add_argument(
+        '--beta', type=float, help='weight of pitch loss', default=1.0)
+    parser.add_argument(
+        '--gamma', type=float, help='weight of yaw loss', default=1.0)
+    parser.add_argument(
+        '--pitch-angle-range', type=int, help='pitch +/- angle range in degrees', default=42)
+    parser.add_argument(
+        '--yaw-angle-range', type=int, help='yaw +/- angle range in degrees', default=42)
+    parser.add_argument(
+        '--pitch-bin-count', type=int, help='bin count for pitch angle', default=28)
+    parser.add_argument(
+        '--yaw-bin-count', type=int, help='bin count for yaw angle', default=28)
+
     args = parser.parse_args()
     return args
 
