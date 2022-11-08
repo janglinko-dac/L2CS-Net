@@ -1,4 +1,3 @@
-from math import gamma
 import clearml
 import os
 
@@ -122,6 +121,7 @@ def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterio
 
 
 def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch):
+    eval_loss = nn.L1Loss()
     model.eval()
     val_sum_loss_pitch_gaze = val_sum_loss_yaw_gaze = val_iter_gaze = val_yaw_mae = val_pitch_mae = 0
     with torch.no_grad():
@@ -148,8 +148,10 @@ def eval(model, val_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, e
                 torch.sum(yaw_predicted * idx_tensor, 1) * yaw_degrees_per_bin - yaw_angle_range
 
             # Add MAE metrics
-            val_yaw_mae += abs(label_yaw_cont_gaze.detach() - yaw_predicted.detach())
-            val_pitch_mae += abs(label_pitch_cont_gaze.detach() - pitch_predicted.detach())
+            # val_yaw_mae += abs(label_yaw_cont_gaze.detach() - yaw_predicted.detach())
+            # val_pitch_mae += abs(label_pitch_cont_gaze.detach() - pitch_predicted.detach())
+            val_yaw_mae += eval_loss(label_yaw_cont_gaze, yaw_predicted).detach()
+            val_pitch_mae += eval_loss(label_pitch_cont_gaze, pitch_predicted).detach()
 
             loss_reg_pitch = reg_criterion(
                 pitch_predicted, label_pitch_cont_gaze)
@@ -247,12 +249,11 @@ if __name__ == '__main__':
         train_loader_gaze = DataLoader(dataset=train_dataset,
                                        batch_size=int(batch_size),
                                        shuffle=True,
-                                       generator=torch.Generator().manual_seed(42),
                                        num_workers=1,
                                        pin_memory=True)
 
         val_dataloader = DataLoader(dataset=val_dataset,
-                                    batch_size=1,
+                                    batch_size=int(batch_size),
                                     shuffle=False,
                                     num_workers=1,
                                     pin_memory=True)
