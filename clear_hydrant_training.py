@@ -45,11 +45,11 @@ class Hydrant(nn.Module):
                                                              ('final', nn.Linear(self.n_features, 1))]))
             self.net.fc_pitch_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
                                                                ('final', nn.Linear(self.n_features, 1))]))
-                                                            
+
         else:
             raise ValueError(f"{architecture} is not implemented yet.")
-    
-        
+
+
     def forward(self, x):
         # TODO: Check if double pass is required or self.net(x) can be computed once
         yaw_head = self.net.fc_yaw_gaze(self.net(x))
@@ -57,7 +57,7 @@ class Hydrant(nn.Module):
         yaw_head_reg = self.net.fc_yaw_reg(self.net(x))
         pitch_head_reg = self.net.fc_pitch_reg(self.net(x))
 
-        
+
         return yaw_head, pitch_head, yaw_head_reg, pitch_head_reg
 
 class GazeCaptureDifferentRanges(Dataset):
@@ -82,7 +82,7 @@ class GazeCaptureDifferentRanges(Dataset):
         self._root = root
         self._transform = transform
         self._flip_signs = flip_signs
-        
+
         self._pitch_angle_lower_range = pitch_angle_lower_range
         self._pitch_angle_upper_range = pitch_angle_upper_range
         self._pitch_degrees_per_bin = pitch_degrees_per_bin
@@ -91,7 +91,7 @@ class GazeCaptureDifferentRanges(Dataset):
         self._yaw_angle_upper_range = yaw_angle_upper_range
         self._yaw_degrees_per_bin = yaw_degrees_per_bin
 
-        
+
         # Read Annotations [filepath.png yaw pitch]
         with open(annotations, 'r') as f:
             self._data = f.readlines()
@@ -133,7 +133,7 @@ class GazeCaptureDifferentRanges(Dataset):
         binned_pitch = np.digitize([pitch], bins_pitch) - 1
         binned_yaw = np.digitize([yaw], bins_yaw) - 1
         binned_pose_stacked = np.hstack((binned_yaw, binned_pitch))
-        
+
 
         labels = binned_pose_stacked
         cont_labels = torch.FloatTensor([yaw, pitch])
@@ -147,7 +147,7 @@ def gauss(x: np.ndarray, mu: float, sigma: float):
     Input:
     x: np.ndarray domain
     mu: float expected value
-    sigma: float standard deviatian 
+    sigma: float standard deviatian
     '''
     return 1 / np.sqrt(2*np.pi * sigma * sigma) * np.exp((-(x - mu)**2)/(2*sigma*sigma))
 
@@ -172,7 +172,7 @@ def smooth_labels(bin_numbers: np.ndarray,  sigma: float, bin_count: int, thresh
         smoothed_bins = (gauss(x, bin_number, sigma) > threshold).astype(int) * gauss(x, bin_number, sigma)
         smoothed_bins /= sum(smoothed_bins)
         smoothed_labels.append(smoothed_bins)
-        
+
     smoothed_labels = np.array(smoothed_labels)
     return torch.from_numpy(smoothed_labels)
 
@@ -180,7 +180,7 @@ def smooth_labels(bin_numbers: np.ndarray,  sigma: float, bin_count: int, thresh
 train_transformations = transforms.Compose([transforms.ToTensor(),
                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                  std=[0.229, 0.224, 0.225])])
-                                                           
+
 
 val_transformations = transforms.Compose([transforms.ToTensor(),
                                       transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', help='Number of epochs', default=20, type=int)
     parser.add_argument('--batch-size', help='Batch size', default=8, type=int)
     # ------OUTPUT ARGUMENTS------
-    parser.add_argument('--output-folder', help='Folder where models will be saved', required=True)
+    parser.add_argument('--output-folder', help='Folder where models will be saved', default='')
 
     args = parser.parse_args()
 
@@ -231,12 +231,14 @@ if __name__ == '__main__':
         raise ValueError("Pitch range must be divisible by pitch resolution")
     else:
         bin_number_pitch = int((args.pitch_upper_range - args.pitch_lower_range) / args.pitch_resolution)
-    
+
     if (args.yaw_upper_range - args.yaw_lower_range) % args.yaw_resolution:
         raise ValueError("yaw range must be divisible by Yaw resolution")
     else:
         bin_number_yaw = int((args.yaw_upper_range - args.yaw_lower_range) / args.yaw_resolution)
 
+    # create output directory
+    os.makedirs(args.output_folder, exist_ok=True)
 
     # Define device
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -248,22 +250,22 @@ if __name__ == '__main__':
     # Define datasets
     train_dataset=GazeCaptureDifferentRanges(os.path.join(args.train_dir, 'annotations.txt'),
                                              args.train_dir,
-                                             train_transformations, 
+                                             train_transformations,
                                              False,
-                                             args.pitch_lower_range, 
+                                             args.pitch_lower_range,
                                              args.pitch_upper_range,
-                                             args.pitch_resolution, 
+                                             args.pitch_resolution,
                                              args.yaw_lower_range,
                                              args.yaw_upper_range,
                                              args.yaw_resolution)
 
     val_dataset=GazeCaptureDifferentRanges(os.path.join(args.val_dir, 'annotations.txt'),
                                            args.val_dir,
-                                           val_transformations, 
+                                           val_transformations,
                                            False,
-                                           args.pitch_lower_range, 
+                                           args.pitch_lower_range,
                                            args.pitch_upper_range,
-                                           args.pitch_resolution, 
+                                           args.pitch_resolution,
                                            args.yaw_lower_range,
                                            args.yaw_upper_range,
                                            args.yaw_resolution)
@@ -285,7 +287,7 @@ if __name__ == '__main__':
     classification_loss = nn.CrossEntropyLoss()
     regression_loss = nn.L1Loss()
     quadratic_loss = nn.MSELoss()
-    
+
     # Define optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -310,36 +312,36 @@ if __name__ == '__main__':
         total_yaw_reg = 0
         total_pitch_reg = 0
         total_yaw_bins = 0
-        total_pitch_bins = 0 
+        total_pitch_bins = 0
         total_yaw_combined = 0
         total_pitch_combined = 0
 
         iters_number = 0
 
         for i, (images_gaze, labels_gaze, cont_labels_gaze) in enumerate(train_dataloader):
-            
+
             iters_number += 1
-            
+
             images_gaze = Variable(images_gaze).to(device)
-            
+
             label_yaw_cont_gaze = Variable(cont_labels_gaze[:, 0]).to(device)
             label_pitch_cont_gaze = Variable(cont_labels_gaze[:, 1]).to(device)
-                
+
 
             label_yaw_gaze = labels_gaze[:, 0]
             label_pitch_gaze = labels_gaze[:, 1]
 
             if args.label_smoothing:
-                label_yaw_gaze = label_yaw_gaze.numpy() 
+                label_yaw_gaze = label_yaw_gaze.numpy()
                 label_yaw_gaze = smooth_labels(label_yaw_gaze, args.smoothing_sigma, bin_number_yaw)
-                label_pitch_gaze = label_pitch_gaze.numpy() 
+                label_pitch_gaze = label_pitch_gaze.numpy()
                 label_pitch_gaze = smooth_labels(label_pitch_gaze, args.smoothing_sigma, bin_number_pitch)
 
             label_yaw_gaze = label_yaw_gaze.to(device)
             label_pitch_gaze = label_pitch_gaze.to(device)
-            
+
             yaw, pitch, yaw_reg, pitch_reg = model(images_gaze)
-            
+
             loss_yaw_gaze = classification_loss(yaw, label_yaw_gaze)
             loss_pitch_gaze = classification_loss(pitch, label_pitch_gaze)
 
@@ -352,21 +354,21 @@ if __name__ == '__main__':
             loss = alpha_pitch * loss_pitch_gaze + alpha_yaw * loss_yaw_gaze + beta_pitch * loss_pitch_reg + beta_yaw * loss_yaw_reg
             loss.backward()
             optimizer.step()
-            
+
             with torch.no_grad():
                 yaw_predicted = softmax(yaw)
                 pitch_predicted = softmax(pitch)
-                
+
                 yaw_predicted = torch.sum(yaw_predicted * idx_tensor_yaw, 1) * args.yaw_resolution + args.yaw_lower_range
                 pitch_predicted = torch.sum(pitch_predicted * idx_tensor_pitch, 1) * args.pitch_resolution + args.pitch_lower_range
-                
+
                 loss_yaw_reg_bins = regression_loss(label_yaw_cont_gaze, yaw_predicted)
                 loss_pitch_reg_bins = regression_loss(label_pitch_cont_gaze, pitch_predicted)
 
                 loss_yaw_combined = regression_loss((yaw_predicted + yaw_reg)/2, label_yaw_cont_gaze)
                 loss_pitch_combined = regression_loss((pitch_predicted + pitch_reg)/2, label_pitch_cont_gaze)
-            
-            
+
+
             total_yaw_reg += regression_loss(label_yaw_cont_gaze, yaw_predicted).detach()
             total_pitch_reg += regression_loss(label_pitch_cont_gaze, pitch_predicted).detach()
 
@@ -387,33 +389,33 @@ if __name__ == '__main__':
         total_yaw_reg = 0
         total_pitch_reg = 0
         total_yaw_bins = 0
-        total_pitch_bins = 0 
+        total_pitch_bins = 0
         total_yaw_combined = 0
         total_pitch_combined = 0
 
         val_iters = 0
-        
+
         model.eval()
         with torch.no_grad():
             for i, (images_gaze, labels_gaze, cont_labels_gaze) in enumerate(val_dataloader):
                 val_iters += 1
-                
+
                 label_yaw_cont_gaze = Variable(cont_labels_gaze[:, 0]).to(device)
                 label_pitch_cont_gaze = Variable(cont_labels_gaze[:, 1]).to(device)
-                
+
                 images_gaze = Variable(images_gaze).to(device)
 
                 yaw, pitch, yaw_reg, pitch_reg = model(images_gaze)
-                
+
                 pitch_predicted = softmax(pitch)
                 yaw_predicted = softmax(yaw)
-                
+
                 yaw_predicted = torch.sum(yaw_predicted * idx_tensor_yaw, 1) * args.yaw_resolution + args.yaw_lower_range
                 pitch_predicted = torch.sum(pitch_predicted * idx_tensor_pitch, 1) * args.pitch_resolution + args.pitch_lower_range
-                
+
                 loss_pitch_bins = regression_loss(label_pitch_cont_gaze, pitch_predicted)
                 loss_yaw_bins = regression_loss(label_yaw_cont_gaze, yaw_predicted)
-                
+
                 pitch_reg = pitch_reg.view(-1)
                 yaw_reg = yaw_reg.view(-1)
 
@@ -440,4 +442,5 @@ if __name__ == '__main__':
         logger.report_scalar("MAE", "[VAL] Combined Yaw", iteration=epoch, value=(total_yaw_combined/val_iters))
         logger.report_scalar("MAE", "[VAL] Combined Pitch", iteration=epoch, value=(total_pitch_combined/val_iters))
 
-        torch.save(model, os.path.join(args.output_folder, f"model_epoch{epoch+1}.pkl"))
+        if args.output_folder:
+            torch.save(model, os.path.join(args.output_folder, f"model_epoch{epoch+1}.pkl"))
