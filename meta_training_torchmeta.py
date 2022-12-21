@@ -1,10 +1,10 @@
+import clearml
 import higher
 import torch
 from torch.autograd import Variable
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
-
 import torch.utils.model_zoo as model_zoo
 from torchvision import transforms
 
@@ -18,6 +18,9 @@ from clear_training_utils import (parse_args,
                                   load_filtered_state_dict)
 
 if __name__ == '__main__':
+
+    # task = clearml.Task.init(project_name="meta", task_name="initial_experiment", tags="v1")
+    # logger = task.get_logger()
 
     transformations = transforms.Compose([
         transforms.Resize(448),
@@ -53,12 +56,15 @@ if __name__ == '__main__':
                                 {'params': get_fc_params(model), 'lr': 1e-5}
                                 ], 1e-5)
 
-    data = WETMetaLoader(annotations="/home/jan/meta_dataset_normalized/annotations.txt",
-                         root="/home/jan/meta_dataset_normalized",
-                         nshot_support=5, n_query=10,
+    data = WETMetaLoader(annotations="/home/janek/software/L2CS-Net/datasets/meta_dataset_normalized/annotations.txt",
+                         root="/home/janek/software/L2CS-Net/datasets/meta_dataset_normalized",
+                         nshot_support=8, n_query=17,
                          transforms=transformations)
-
-    meta_train, meta_test = random_split(data, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
+    proportions = [.8, .2]
+    lengths = [int(p * len(data)) for p in proportions]
+    lengths[-1] = len(data) - sum(lengths[:-1])
+    meta_train, meta_test = random_split(data, lengths, generator=torch.Generator().manual_seed(42))
+    # meta_train, meta_test = random_split(data, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
 
     meta_train_loader = DataLoader(dataset=meta_train,
                                    batch_size=1,
@@ -125,9 +131,9 @@ if __name__ == '__main__':
                     s_loss_pitch_gaze += s_loss_reg_pitch
                     s_loss_yaw_gaze += s_loss_reg_yaw
 
-                    loss_seq = [s_loss_pitch_gaze, s_loss_yaw_gaze]
-                    grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
-
+                    # loss_seq = [s_loss_pitch_gaze, s_loss_yaw_gaze]
+                    # grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
+                    loss_seq = s_loss_pitch_gaze + s_loss_yaw_gaze
                     # torch.autograd.backward(loss_seq, grad_seq)
                     diffopt.step(loss_seq)
                     #? I dont know how to pass the griadients sequence here
@@ -155,16 +161,18 @@ if __name__ == '__main__':
                 q_loss_pitch_gaze += q_loss_reg_pitch
                 q_loss_yaw_gaze += q_loss_reg_yaw
 
-            loss_seq = [q_loss_pitch_gaze, q_loss_yaw_gaze]
-            grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
-            torch.autograd.backward(loss_seq, grad_seq)
+            # loss_seq = [q_loss_pitch_gaze, q_loss_yaw_gaze]
+            # grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
+            # torch.autograd.backward(loss_seq, grad_seq)
+            loss_seq = q_loss_pitch_gaze + q_loss_yaw_gaze
+            loss_seq.backward()
             meta_optimizer.step()
 
         test_pitch_loss = 0
         test_yaw_loss = 0
 
-        for i, (s_im, s_lc, s_lb, q_im, q_lc, q_lb) in enumerate(meta_train_loader):
-            print(f"Iter {i+1} / {len(meta_train_loader.dataset)}")
+        for i, (s_im, s_lc, s_lb, q_im, q_lc, q_lb) in enumerate(meta_test_loader):
+            print(f"Iter {i+1} / {len(meta_test_loader.dataset)}")
             # Prepare data
             s_im = torch.squeeze(s_im, 0)
             s_im = s_im.to(device)
@@ -215,9 +223,9 @@ if __name__ == '__main__':
                     s_loss_pitch_gaze += s_loss_reg_pitch
                     s_loss_yaw_gaze += s_loss_reg_yaw
 
-                    loss_seq = [s_loss_pitch_gaze, s_loss_yaw_gaze]
-                    grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
-
+                    # loss_seq = [s_loss_pitch_gaze, s_loss_yaw_gaze]
+                    # grad_seq = [torch.tensor(1.0).cuda(device) for _ in range(len(loss_seq))]
+                    loss_seq = s_loss_pitch_gaze + s_loss_yaw_gaze
                     # torch.autograd.backward(loss_seq, grad_seq)
                     diffopt.step(loss_seq)
 
@@ -255,3 +263,6 @@ if __name__ == '__main__':
             # meta_optimizer.step()
         print(test_pitch_loss / len(meta_test_loader.dataset))
         print(test_yaw_loss / len(meta_test_loader.dataset))
+        # logger.report_scalar("MSE", "[VAL] Yaw", iteration=epoch, value=(test_yaw_loss / len(meta_test_loader.dataset)))
+        # logger.report_scalar("MSE", "[VAL] Pitch", iteration=epoch, value=(test_pitch_loss / len(meta_test_loader.dataset)))
+       
