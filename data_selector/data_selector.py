@@ -195,7 +195,7 @@ class DataSelector():
             # randomly select data from the pool
             # make sure that users that fall to train dataset are not present in the validation dataset
 
-            assert self._dataset_config_dict['train_ratio'] < 1.0
+            assert self._dataset_config_dict['train_ratio'] <= 1.0
 
             # select user IDs for training and validation dataset according to ratio
             user_ids = self.__get_user_ids()
