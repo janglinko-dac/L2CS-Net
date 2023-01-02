@@ -330,9 +330,9 @@ if __name__ == '__main__':
     )
     df.index.name = "loss"
     logger.report_table(
+        "K-fold training for last epoch",
         "K-fold training",
-        "K-fold training",
-        iteration=iteration,
+        iteration=0,
         table_plot=df
     )
     df = pd.DataFrame(
@@ -345,8 +345,8 @@ if __name__ == '__main__':
     )
     df.index.name = "loss"
     logger.report_table(
+        "K-fold validation for last epoch",
         "K-fold validation",
-        "K-fold validation",
-        iteration=iteration,
+        iteration=0,
         table_plot=df
 )
