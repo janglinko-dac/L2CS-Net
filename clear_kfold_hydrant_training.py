@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.autograd import Variable
 from hydrant_utils import Hydrant, GazeCaptureDifferentRanges, gauss, smooth_labels
 from sklearn.model_selection import KFold
+import pandas as pd
+import numpy as np
 
 def reset_weights(m):
   '''
@@ -93,6 +95,20 @@ if __name__ == '__main__':
     torch.manual_seed(42)
     # Define KFold cross validator
     kfold = KFold(n_splits=args.k_fold, shuffle=True)
+
+    regression_yaw = []
+    regression_pitch = []
+    bins_yaw = []
+    bins_pitch = []
+    combined_yaw = []
+    combined_pitch = []
+
+    regression_yaw_val = []
+    regression_pitch_val = []
+    bins_yaw_val = []
+    bins_pitch_val = []
+    combined_yaw_val = []
+    combined_pitch_val = []
 
     # K-fold Cross Validation model evaluation
     for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset)):
@@ -224,6 +240,15 @@ if __name__ == '__main__':
             logger.report_scalar(f"MAE fold no. {fold}", "Combined Yaw", iteration=epoch, value=(total_yaw_combined/iters_number))
             logger.report_scalar(f"MAE fold no. {fold}", "Combined Pitch", iteration=epoch, value=(total_pitch_combined/iters_number))
 
+            # save results for the last epoch for each k-fold
+            if epoch == n_epochs - 1:
+                regression_yaw.append((total_yaw_reg/iters_number).cpu().numpy())
+                regression_pitch.append((total_pitch_reg/iters_number).cpu().numpy())
+                bins_yaw.append((total_yaw_bins/iters_number).cpu().numpy())
+                bins_pitch.append((total_pitch_bins/iters_number).cpu().numpy())
+                combined_yaw.append((total_yaw_combined/iters_number).cpu().numpy())
+                combined_pitch.append((total_pitch_combined/iters_number).cpu().numpy())
+
             total_yaw_reg = 0
             total_pitch_reg = 0
             total_yaw_bins = 0
@@ -280,7 +305,48 @@ if __name__ == '__main__':
             logger.report_scalar(f"MAE fold no. {fold}", "[VAL] Combined Yaw", iteration=epoch, value=(total_yaw_combined/val_iters))
             logger.report_scalar(f"MAE fold no. {fold}", "[VAL] Combined Pitch", iteration=epoch, value=(total_pitch_combined/val_iters))
 
+            if epoch == n_epochs - 1:
+                regression_yaw_val.append((total_yaw_reg/iters_number).cpu().numpy())
+                regression_pitch_val.append((total_pitch_reg/iters_number).cpu().numpy())
+                bins_yaw_val.append((total_yaw_bins/iters_number).cpu().numpy())
+                bins_pitch_val.append((total_pitch_bins/iters_number).cpu().numpy())
+                combined_yaw_val.append((total_yaw_combined/iters_number).cpu().numpy())
+                combined_pitch_val.append((total_pitch_combined/iters_number).cpu().numpy())
+
         if args.output_folder:
             # create output directory
             os.makedirs(args.output_folder, exist_ok=True)
             torch.save(model, os.path.join(args.output_folder, f"model_fold_{fold}_epoch{epoch+1}.pkl"))
+
+    # calculate metrics for k-fold
+
+    df = pd.DataFrame(
+    {
+        "mean": [np.mean(regression_yaw), np.mean(regression_pitch), np.mean(bins_yaw), np.mean(bins_pitch), np.mean(combined_yaw), np.mean(combined_pitch)],
+        "std": [np.std(regression_yaw), np.std(regression_pitch), np.std(bins_yaw), np.std(bins_pitch), np.std(combined_yaw), np.std(combined_pitch)],
+
+    },
+    index=["regression_yaw", "regression_pitch", "bins_yaw","bins_pitch", "combined_yaw", "combined_pitch"],
+    )
+    df.index.name = "loss"
+    logger.report_table(
+        "K-fold training",
+        "K-fold training",
+        iteration=iteration,
+        table_plot=df
+    )
+    df = pd.DataFrame(
+    {
+        "mean": [np.mean(regression_yaw_val), np.mean(regression_pitch_val), np.mean(bins_yaw_val), np.mean(bins_pitch_val), np.mean(combined_yaw_val), np.mean(combined_pitch_val)],
+        "std": [np.std(regression_yaw_val), np.std(regression_pitch_val), np.std(bins_yaw_val), np.std(bins_pitch_val), np.std(combined_yaw_val), np.std(combined_pitch_val)],
+
+    },
+    index=["regression_yaw", "regression_pitch", "bins_yaw","bins_pitch", "combined_yaw", "combined_pitch"],
+    )
+    df.index.name = "loss"
+    logger.report_table(
+        "K-fold validation",
+        "K-fold validation",
+        iteration=iteration,
+        table_plot=df
+)
