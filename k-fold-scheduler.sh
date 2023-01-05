@@ -11,9 +11,9 @@ activate
 
 # set the parameters of the k-fold training
 python $DIRECTORY_PATH/clear_kfold_hydrant_training.py \
---train-dir $DATA_PATH \
+# --train-dir $DATA_PATH \
 --architecture efficientnet_b3 \
---batch-size 2 \
+--batch-size 8 \
 --clearml-experiment local_experimet_01 \
 --clearml-tags kfold local test scheduled \
 --epochs 5 \

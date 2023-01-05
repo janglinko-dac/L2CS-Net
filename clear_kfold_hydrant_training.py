@@ -7,9 +7,11 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.autograd import Variable
 from hydrant_utils import Hydrant, GazeCaptureDifferentRanges, gauss, smooth_labels
-from sklearn.model_selection import KFold
 import pandas as pd
 import numpy as np
+import subprocess
+import shutil
+
 
 def reset_weights(m):
   '''
@@ -26,10 +28,21 @@ train_transformations = transforms.Compose([transforms.ToTensor(),
                                                                  std=[0.229, 0.224, 0.225])])
 
 
+val_transformations = transforms.Compose([transforms.ToTensor(),
+                                      transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                           std=[0.229, 0.224, 0.225])])
+
+DATASET_CONFIG = '/home/czarek/datasets/experiment/config.yaml'
+DATA_FOLDERS = '/home/czarek/datasets/experiment/folder.yaml'
+OUTPUT_TRAIN = '/home/czarek/datasets/experiment/train'
+OUTPUT_VAL = '/home/czarek/datasets/experiment/val'
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Gaze estimation using Hydrant.')
     # ------DATASET ARGS------
-    parser.add_argument('--train-dir', help='Directory path for training dataset.', required=True)
+    # path to data directory is in DATA_FOLDERS file.
+    # parser.add_argument('--train-dir', help='Directory path for training dataset.', required=True)
     # ------NETWORK ARCHITECTURE------
     parser.add_argument('--architecture', help='Root network architecture', required=True)
     # ------BINS ARGUMENTS------
@@ -79,23 +92,6 @@ if __name__ == '__main__':
     # Define device
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    # Define dataset
-    train_dataset=GazeCaptureDifferentRanges(os.path.join(args.train_dir, 'annotations.txt'),
-                                             args.train_dir,
-                                             train_transformations,
-                                             False,
-                                             args.pitch_lower_range,
-                                             args.pitch_upper_range,
-                                             args.pitch_resolution,
-                                             args.yaw_lower_range,
-                                             args.yaw_upper_range,
-                                             args.yaw_resolution)
-
-    # Set fixed random number seed
-    torch.manual_seed(42)
-    # Define KFold cross validator
-    kfold = KFold(n_splits=args.k_fold, shuffle=True)
-
     regression_yaw = []
     regression_pitch = []
     bins_yaw = []
@@ -110,33 +106,72 @@ if __name__ == '__main__':
     combined_yaw_val = []
     combined_pitch_val = []
 
-    # K-fold Cross Validation model evaluation
-    for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset)):
-        print(f'FOLD {fold}')
-        print(50*'-')
-         # Sample elements randomly from a given list of ids, no replacement.
-        train_subsampler = SubsetRandomSampler(train_ids)
-        test_subsampler = SubsetRandomSampler(test_ids)
+    for fold in range(args.k_fold):
+        print('-'*50)
+        print(f'Fold number {fold}')
 
-         # Define data loaders for training and testing data in this fold
-        train_dataloader = DataLoader(train_dataset,
-                                batch_size=args.batch_size,
-                                num_workers=1,
-                                pin_memory=True,
-                                sampler=train_subsampler)
-        val_dataloader = DataLoader(train_dataset,
-                            batch_size=args.batch_size,
-                            num_workers=1,
-                            pin_memory=True,
-                            sampler= test_subsampler)
+        # make sure directories are empty
+        try:
+            print(f'Removing {OUTPUT_TRAIN} files for fold {fold} ...')
+            shutil.rmtree(OUTPUT_TRAIN)
+        except:
+            print(f'There was no data in {OUTPUT_TRAIN}')
 
-        # Build model
+        try:
+            print(f'Removing {OUTPUT_VAL} files for fold {fold} ...')
+            shutil.rmtree(OUTPUT_VAL)
+        except:
+            print(f'There was no data in {OUTPUT_VAL}')
+
+        print("Split dataset into train and validation part")
+        cmd = [
+        'python',
+        'generate_datasets.py',
+        f'--data_folders={DATA_FOLDERS}',
+        f'--dataset_config={DATASET_CONFIG}',
+        f'--output_train={OUTPUT_TRAIN}',
+        f'--output_val={OUTPUT_VAL}',
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE)
+         # Build model
         model = Hydrant(args.architecture, bin_number_yaw, bin_number_pitch)
-
-        # TODO: Discuss if the weight should be reset to avoid weight leakage. IMO not necessary
-        # cause we use pretrained weights
-        # model.apply(reset_weights)
         model.to(device)
+
+        # Define datasets
+        train_dataset=GazeCaptureDifferentRanges(os.path.join(OUTPUT_TRAIN, 'annotations.txt'),
+                                                OUTPUT_TRAIN,
+                                                train_transformations,
+                                                False,
+                                                args.pitch_lower_range,
+                                                args.pitch_upper_range,
+                                                args.pitch_resolution,
+                                                args.yaw_lower_range,
+                                                args.yaw_upper_range,
+                                                args.yaw_resolution)
+
+        val_dataset=GazeCaptureDifferentRanges(os.path.join(OUTPUT_VAL, 'annotations.txt'),
+                                            OUTPUT_VAL,
+                                            val_transformations,
+                                            False,
+                                            args.pitch_lower_range,
+                                            args.pitch_upper_range,
+                                            args.pitch_resolution,
+                                            args.yaw_lower_range,
+                                            args.yaw_upper_range,
+                                            args.yaw_resolution)
+
+        # Define dataloaders
+        train_dataloader = DataLoader(dataset=train_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    num_workers=1,
+                                    pin_memory=True)
+
+        val_dataloader = DataLoader(dataset=val_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    num_workers=1,
+                                    pin_memory=True)
 
         # Define losses
         classification_loss = nn.CrossEntropyLoss()
@@ -157,9 +192,10 @@ if __name__ == '__main__':
         idx_tensor_yaw = Variable(torch.FloatTensor(idx_tensor_yaw)).to(device)
         idx_tensor_pitch = [idx for idx in range(bin_number_pitch)]
         idx_tensor_pitch = Variable(torch.FloatTensor(idx_tensor_pitch)).to(device)
+
         softmax = nn.Softmax(dim=1).to(device)
 
-        # training loop
+
         for epoch in range(n_epochs):
             print(f"#### Epoch {epoch + 1} ####")
             model.train()
@@ -306,19 +342,36 @@ if __name__ == '__main__':
             logger.report_scalar(f"MAE fold no. {fold}", "[VAL] Combined Pitch", iteration=epoch, value=(total_pitch_combined/val_iters))
 
             if epoch == n_epochs - 1:
-                regression_yaw_val.append((total_yaw_reg/iters_number).cpu().numpy())
-                regression_pitch_val.append((total_pitch_reg/iters_number).cpu().numpy())
-                bins_yaw_val.append((total_yaw_bins/iters_number).cpu().numpy())
-                bins_pitch_val.append((total_pitch_bins/iters_number).cpu().numpy())
-                combined_yaw_val.append((total_yaw_combined/iters_number).cpu().numpy())
-                combined_pitch_val.append((total_pitch_combined/iters_number).cpu().numpy())
+                regression_yaw_val.append((total_yaw_reg/val_iters).cpu().numpy())
+                regression_pitch_val.append((total_pitch_reg/val_iters).cpu().numpy())
+                bins_yaw_val.append((total_yaw_bins/val_iters).cpu().numpy())
+                bins_pitch_val.append((total_pitch_bins/val_iters).cpu().numpy())
+                combined_yaw_val.append((total_yaw_combined/val_iters).cpu().numpy())
+                combined_pitch_val.append((total_pitch_combined/val_iters).cpu().numpy())
 
         if args.output_folder:
             # create output directory
             os.makedirs(args.output_folder, exist_ok=True)
             torch.save(model, os.path.join(args.output_folder, f"model_fold_{fold}_epoch{epoch+1}.pkl"))
 
+
     # calculate metrics for k-fold
+
+    # print('validation')
+    # print(regression_yaw_val)
+    # print(regression_pitch_val)
+    # print(bins_yaw_val)
+    # print(bins_pitch_val)
+    # print(combined_yaw_val)
+    # print(combined_pitch_val)
+
+    # print('training')
+    # print(regression_yaw)
+    # print(regression_pitch)
+    # print(bins_yaw)
+    # print(bins_pitch)
+    # print(combined_yaw)
+    # print(combined_pitch)
 
     df = pd.DataFrame(
     {
@@ -349,4 +402,4 @@ if __name__ == '__main__':
         "K-fold validation",
         iteration=0,
         table_plot=df
-)
+    )
