@@ -23,7 +23,7 @@ class L2CS(nn.Module):
         self.fc_pitch_gaze = nn.Linear(512 * block.expansion, num_bins)
 
        # Vestigial layer from previous experiments
-        self.fc_finetune = nn.Linear(512 * block.expansion + 3, 3)
+        # self.fc_finetune = nn.Linear(512 * block.expansion + 3, 3)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

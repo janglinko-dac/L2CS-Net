@@ -8,6 +8,9 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.backends.cudnn as cudnn
+from torch.utils.data import random_split
+
+
 
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import MultiStepLR
@@ -22,6 +25,7 @@ from clear_training_utils import (parse_args,
                                   get_ignored_params,
                                   getArch_weights,
                                   load_filtered_state_dict)
+from meta_dataloader import WETMetaLoader
 
 
 def train(model, optimizer, train_dataset_length, train_dataloader, reg_criterion, cls_criterion, gpu, idx_tensor, epoch, writer, val_dataloader, writing_frequency=50):
@@ -175,7 +179,7 @@ if __name__ == '__main__':
     # Parse arguments
     args = parse_args()
     # TODO: Add tags as input arguments
-    task = clearml.Task.init(project_name="WET", task_name=args.tb, tags=args.cml_tags)
+    task = clearml.Task.init(project_name="meta", task_name=args.tb, tags=args.cml_tags)
 
     # Enable cuda
     cudnn.enabled = True
@@ -230,21 +234,31 @@ if __name__ == '__main__':
 
     if data_set == "gazecapture":
 
-        train_dataset=datasets.GazeCapture(args.gazecapture_ann,
+        data = WETMetaLoader(annotations="/home/janek/software/L2CS-Net/meta_dataset_normalized/annotations.txt",
+                         root="/home/janek/software/L2CS-Net/meta_dataset_normalized",
+                         nshot_support=20, n_query=30,
+                         transforms=transformations)
+
+        proportions = [.8, .2]
+        lengths = [int(p * len(data)) for p in proportions]
+        lengths[-1] = len(data) - sum(lengths[:-1])
+        meta_train, meta_test = random_split(data, lengths, generator=torch.Generator().manual_seed(42))
+        # meta_train, meta_test = random_split(data, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
+        train_dataset=datasets.GazeCapture2(args.gazecapture_ann,
                                            args.gazecapture_dir,
                                            transformations,
                                            pitch_angle_range=pitch_angle_range,
                                            yaw_angle_range=yaw_angle_range,
                                            pitch_degrees_per_bin=pitch_degrees_per_bin,
-                                           yaw_degrees_per_bin=yaw_degrees_per_bin)
+                                           yaw_degrees_per_bin=yaw_degrees_per_bin, subjects_list=meta_train.indices)
 
-        val_dataset = datasets.GazeCapture(args.validation_ann,
-                                           args.validation_dir,
+        val_dataset = datasets.GazeCapture2(args.gazecapture_ann,
+                                           args.gazecapture_dir,
                                            transformations,
                                            pitch_angle_range=pitch_angle_range,
                                            yaw_angle_range=yaw_angle_range,
                                            pitch_degrees_per_bin=pitch_degrees_per_bin,
-                                           yaw_degrees_per_bin=yaw_degrees_per_bin)
+                                           yaw_degrees_per_bin=yaw_degrees_per_bin, subjects_list=meta_test.indices)
 
         train_loader_gaze = DataLoader(dataset=train_dataset,
                                        batch_size=int(batch_size),
@@ -257,6 +271,31 @@ if __name__ == '__main__':
                                     shuffle=False,
                                     num_workers=1,
                                     pin_memory=True)
+
+        # data=datasets.GazeCapture(args.gazecapture_ann,
+        #                           args.gazecapture_dir,
+        #                           transformations,
+        #                           pitch_angle_range=pitch_angle_range,
+        #                           yaw_angle_range=yaw_angle_range,
+        #                           pitch_degrees_per_bin=pitch_degrees_per_bin,
+        #                           yaw_degrees_per_bin=yaw_degrees_per_bin)
+        # proportions = [.8, .2]
+        # lengths = [int(p * len(data)) for p in proportions]
+        # lengths[-1] = len(data) - sum(lengths[:-1])
+        # train_dataset, val_dataset = random_split(data, lengths, generator=torch.Generator().manual_seed(42))
+        # # meta_train, meta_test = random_split(data, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
+
+        # train_loader_gaze = DataLoader(dataset=train_dataset,
+        #                                batch_size=int(batch_size),
+        #                                shuffle=True,
+        #                                num_workers=1,
+        #                                pin_memory=True)
+
+        # val_dataloader = DataLoader(dataset=val_dataset,
+        #                             batch_size=int(batch_size),
+        #                             shuffle=False,
+        #                             num_workers=1,
+        #                             pin_memory=True)
 
         torch.backends.cudnn.benchmark = True
 
@@ -294,7 +333,7 @@ if __name__ == '__main__':
                 epoch,
                 writer,
                 val_dataloader,
-                writing_frequency=50)
+                writing_frequency=1000)
             scheduler.step()
 
             if epoch == 0:

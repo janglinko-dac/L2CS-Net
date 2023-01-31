@@ -227,3 +227,84 @@ class GazeCapture(Dataset):
         cont_labels = torch.FloatTensor([pitch, yaw])
 
         return img, labels, cont_labels
+
+
+class GazeCapture2(Dataset):
+    '''
+    GazeCapture DataLoader.
+    '''
+    def __init__(self, annotations: str, root: str, transform: transforms.Compose =None, flip_signs=False,
+        pitch_angle_range: int = 42, yaw_angle_range: int = 42, pitch_degrees_per_bin: int = 3, yaw_degrees_per_bin: int = 3,
+        subjects_list = [1]):
+        '''
+        Initialization.
+
+        Parameters
+
+        Input:
+        annotations: str Annotations filepath
+        root: str Path to the dataset base directory.
+        transform: torchvision.transforms.Compose Image transform. Can be None
+        flip_signs: flip signs in yaw and pitch labels
+        '''
+
+        assert pitch_angle_range == yaw_angle_range, 'Currently only same angle ranges for pitch and yaw are supported'
+        assert pitch_degrees_per_bin == yaw_degrees_per_bin, 'Currently only same bin counts for pitch and yaw are supported'
+
+        self._root = root
+        self._transform = transform
+        self._flip_signs = flip_signs
+        self._pitch_angle_range = pitch_angle_range
+        self._yaw_angle_range = yaw_angle_range
+        self._pitch_degrees_per_bin = pitch_degrees_per_bin
+        self._yaw_degrees_per_bin = yaw_degrees_per_bin
+
+        # Read Annotations [filepath.png pitch yaw]
+        with open(annotations, 'r') as f:
+            self._data = f.readlines()
+        # Remove \n from the end of each line and empty last line
+        self._data = list(map(str.strip, self._data))[:-1]
+        self.__data = []
+        for subject in subjects_list:
+            data = self._data.copy()
+            for row in data:
+                if row.startswith(str(subject)+"/"):
+                    self.__data.append(row)
+                    self._data.remove(row)
+
+    def __len__(self):
+        # Length of annotations
+        return len(self.__data)
+
+    def __getitem__(self, idx):
+        # Get the annotation
+        annotation = self.__data[idx]
+
+        # Split [filepath.png yaw pitch]
+        img_path, yaw, pitch = annotation.split(" ")
+
+        # Convert to Tensor
+        label = np.array([pitch, yaw]).astype("float")
+        if self._flip_signs:
+            label[0] *= -1
+            label[1] *= -1
+        label = torch.from_numpy(label).type(torch.FloatTensor)
+
+        # Load image
+        img = Image.open(os.path.join(self._root, img_path))
+        # Apply Transform if not None
+        if self._transform:
+            img = self._transform(img)
+
+        # Convert yaw and pitch to angles
+        pitch = label[0] * 180 / np.pi
+        yaw = label[1] * 180 / np.pi
+
+        # Binarize Values
+        bins = np.array(range(-self._pitch_angle_range, self._pitch_angle_range, self._pitch_degrees_per_bin))
+        binned_pose = np.digitize([pitch, yaw], bins) - 1
+
+        labels = binned_pose
+        cont_labels = torch.FloatTensor([pitch, yaw])
+
+        return img, labels, cont_labels

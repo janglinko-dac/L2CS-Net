@@ -51,12 +51,17 @@ class WETMetaLoader(Dataset):
     def __getitem__(self, index):
         task_id = self._tasks[index]
         data_points = os.listdir(os.path.join(self._root, task_id))
-        support_size = round(self._nshot_support / len(data_points), 2)
-        query_set, support_set = train_test_split(data_points,
-                                                  test_size=support_size,
-                                                  random_state=42)
-        query_set = query_set[:self._n_query]
-        support_set = support_set[:self._nshot_support]
+        # support_size = round(self._nshot_support / len(data_points), 2)
+        # query_set, support_set = train_test_split(data_points,
+        #                                           test_size=support_size,
+        #                                           random_state=42)
+        # query_set = query_set[:self._n_query]
+        # support_set = support_set[:self._nshot_support]
+        #! Not random, first support then query
+        support_set = data_points[:self._nshot_support]
+        #! For the benchmarking, take always the same ammount, from the end
+        query_set = data_points[-self._n_query:]
+        # query_set = data_points[self._nshot_support:(self._nshot_support+self._n_query)]
 
         support_cont = []
         support_binned = []
@@ -74,12 +79,12 @@ class WETMetaLoader(Dataset):
 
             cont_labels = [pitch, yaw]
 
-            support_cont.append(cont_labels)
-            support_binned.append(binned_pose)
 
             # image
             img_path = os.path.join(self._root, row_name)
-            support_images.append(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB))
+            support_images.append(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0)
+            support_cont.append(cont_labels)
+            support_binned.append(binned_pose)
 
 
         query_cont = []
@@ -102,7 +107,7 @@ class WETMetaLoader(Dataset):
             query_binned.append(binned_pose)
             # image
             img_path = os.path.join(self._root, row_name)
-            query_images.append(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB))
+            query_images.append(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0)
 
 
         support_cont = np.array(support_cont)
