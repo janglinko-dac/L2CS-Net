@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset, random_split
 import torch.utils.model_zoo as model_zoo
 from torchvision import transforms
+from mpiifacegaze_loader import MpiiFaceGazeMetaLoader
+
 
 
 from meta_dataloader import WETMetaLoader
@@ -29,8 +31,8 @@ def get_per_step_loss_importance_vector(current_epoch, device,
         :return: A tensor to be used to compute the weighted average of the loss, useful for
         the MSL (Multi Step Loss) mechanism.
         """
-        number_of_training_steps_per_iter = 5
-        multi_step_loss_num_epochs = 15
+        number_of_training_steps_per_iter = number_of_training_steps_per_iter
+        # multi_step_loss_num_epochs = 15
 
 
         loss_weights = np.ones(shape=(number_of_training_steps_per_iter)) * (
@@ -54,12 +56,12 @@ if __name__ == '__main__':
     META_BATCH_SIZE = 1
     META_LR = 5e-5
     INNER_LOOP_LR = 1e-5
-    EPOCHS = 30
+    EPOCHS = 501
     INNER_STEPS = 3
     SUPPORT_SIZE = 20
     QUERY_SIZE = 30
 
-    task = clearml.Task.init(project_name="meta", task_name="new_split", tags="v2")
+    task = clearml.Task.init(project_name="meta", task_name="user_14", tags="v2")
     logger = task.get_logger()
     parameters = task.connect({})
     parameters['meta_batch_size'] = META_BATCH_SIZE
@@ -83,7 +85,7 @@ if __name__ == '__main__':
 
     model, pre_url = getArch_weights("ResNet18", 28)
     load_filtered_state_dict(model, model_zoo.load_url(pre_url))
-    # model = torch.load("/home/janek/software/L2CS-Net/models/meta/model_epoch14.pkl")
+    # model = torch.load("/home/janek/software/L2CS-Net/models/l2cs_maml_random_sample_user/model_epoch79.pkl")
     model = nn.DataParallel(model)
     model.to(device)
 
@@ -107,30 +109,41 @@ if __name__ == '__main__':
     #                             {'params': get_fc_params(model), 'lr': 5e-4}
     #                             ], 5e-4)
 
-    data = WETMetaLoader(annotations="/home/janek/software/L2CS-Net/meta_dataset_normalized/annotations.txt",
-                         root="/home/janek/software/L2CS-Net/meta_dataset_normalized",
-                         nshot_support=SUPPORT_SIZE, n_query=QUERY_SIZE,
-                         transforms=transformations)
-    # proportions = [.8, .2]
+    # data = WETMetaLoader(annotations="/home/janek/software/L2CS-Net/meta_dataset_normalized/annotations.txt",
+    #                      root="/home/janek/software/L2CS-Net/meta_dataset_normalized",
+    #                      nshot_support=SUPPORT_SIZE, n_query=QUERY_SIZE,
+    #                      transforms=transformations)
+
+    # data = WETMetaLoader(annotations="/home/janek/GazeCaptureNormalizedTrain/annotations.txt",
+    #                      root="/home/janek/GazeCaptureNormalizedTrain",
+    #                      nshot_support=SUPPORT_SIZE, n_query=QUERY_SIZE,
+    #                      transforms=transformations)
+
+    data = MpiiFaceGazeMetaLoader(
+                        base_path="/home/janek/MPIIFaceGazeNorm",
+                        support_size=SUPPORT_SIZE, query_size=QUERY_SIZE,
+                        transforms=transformations)
+
+    # proportions = [.9, .1]
     # lengths = [int(p * len(data)) for p in proportions]
     # lengths[-1] = len(data) - sum(lengths[:-1])
     # meta_train, meta_test = random_split(data, lengths, generator=torch.Generator().manual_seed(42))
-    meta_train = Subset(data, range(int(.8*len(data))))
-    meta_test = Subset(data, range(int(.8*len(data)), len(data)))
+    # meta_train = Subset(data, range(int(.9*len(data))))
+    # meta_test = Subset(data, range(int(.1*len(data)), len(data)))
 
     # meta_train, meta_test = random_split(data, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
 
-    meta_train_loader = DataLoader(dataset=meta_train,
+    meta_train_loader = DataLoader(dataset=data,
                                    batch_size=META_BATCH_SIZE,
                                    shuffle=True,
                                    num_workers=1,
                                    pin_memory=False)
 
-    meta_test_loader = DataLoader(dataset=meta_test,
-                                   batch_size=1,
-                                   shuffle=True,
-                                   num_workers=1,
-                                   pin_memory=False)
+    # meta_test_loader = DataLoader(dataset=meta_test,
+    #                                batch_size=1,
+    #                                shuffle=True,
+    #                                num_workers=1,
+    #                                pin_memory=False)
 
     meta_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(meta_optimizer, T_max=len(meta_train_loader), eta_min=0)
 
@@ -235,6 +248,7 @@ if __name__ == '__main__':
                         # else:
                         #     q_loss_seq.backward()
                         # meta_optimizer.step()
+                train_mae = q_loss_reg_pitch.item() + q_loss_reg_yaw.item()
                 outer_loss = 0
                 for s in range(INNER_STEPS):
                     outer_loss += importance_vector[s]*losses[s]
@@ -270,10 +284,11 @@ if __name__ == '__main__':
 
             print(sum(qry_accs) / len(qry_accs))
             logger.report_scalar("Query", "Loss", iteration=iters, value=(sum(qry_accs) / len(qry_accs)))
+            logger.report_scalar("Query", "MAE", iteration=iters, value=train_mae)
             logger.report_scalar("Params", "LR", iteration=iters, value=meta_scheduler.get_last_lr()[0])
-            # meta_scheduler.step()
-
-        torch.save(model, os.path.join("/home/janek/software/L2CS-Net/models/meta_second_split", f"model_epoch{epoch}.pkl"))
+            meta_scheduler.step()
+        if not (epoch+1) % 100:
+            torch.save(model, os.path.join("/home/janek/software/L2CS-Net/models/mpii_14", f"model_epoch{epoch}.pkl"))
         # test_pitch_loss = 0
         # test_yaw_loss = 0
 

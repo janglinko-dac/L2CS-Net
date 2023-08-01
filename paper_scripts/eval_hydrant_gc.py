@@ -9,12 +9,12 @@ import torchvision.transforms as t
 import torchvision
 import math
 from meta_training_hydranet import Hydrant
-
+import tqdm
 
 if __name__ == '__main__':
     CALIBRATION_SET_SIZE = 30
-    INNER_LOOP_LR = 5e-3
-    INNER_STEPS = 30
+    INNER_LOOP_LR = 1e-5
+    INNER_STEPS = 20
 
     BATCH1 = False
 
@@ -47,15 +47,15 @@ if __name__ == '__main__':
     steps = [20, 30]
 
 
-    for support_size in steps:
+    for model_id in range(29, 30):
         losses_pitch = []
         losses_yaw = []
-        for subject in subjects:
+        for subject in tqdm.tqdm(subjects):
             images = sorted(os.listdir(os.path.join(dataset_base_path, subject)))
             if len(images) < 140:
                 continue
 
-            calibration_samples = images[:support_size]
+            calibration_samples = images[:CALIBRATION_SET_SIZE]
             test_samples = images[CALIBRATION_SET_SIZE:CALIBRATION_SET_SIZE+100]
 
             support_cont = []
@@ -111,8 +111,8 @@ if __name__ == '__main__':
 
 
             #! Hydrant (ours)
-            model = Hydrant("efficientnet_b0")
-            state_dict = torch.load("/home/janek/software/L2CS-Net/models/hydrant_effb3/model_epoch23_state_dict.pkl")
+            model = Hydrant("regnet")
+            state_dict = torch.load(f"/home/janek/software/L2CS-Net/models/hydrant_regnet/model_epoch{str(model_id)}_state_dict.pkl")
             model.load_state_dict(state_dict)
             model.train()
             model.to(device)
@@ -134,7 +134,7 @@ if __name__ == '__main__':
 
             q_label_pitch_cont_gaze = Variable(q_lc[:, 0]).cuda(device)
             q_label_yaw_cont_gaze = Variable(q_lc[:, 1]).cuda(device)
-            for _ in range(INNER_STEPS):
+            for step_nr in range(INNER_STEPS):
                 optimizer.zero_grad()
                 pitch_s, yaw_s = model(s_im)
 

@@ -10,10 +10,14 @@ from torch import nn
 from torchvision.models.efficientnet import efficientnet_b2, EfficientNet_B2_Weights
 from torchvision.models.efficientnet import efficientnet_b0, EfficientNet_B0_Weights
 from torchvision.models.efficientnet import efficientnet_b3, EfficientNet_B3_Weights
+from torchvision.models.resnet import resnext50_32x4d, ResNeXt50_32X4D_Weights
+from torchvision.models.resnet import resnet18, ResNet18_Weights
+from torchvision.models.regnet import regnet_y_800mf, RegNet_Y_800MF_Weights
 from torchvision import transforms
 from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
+
 
 import clearml
 import higher
@@ -55,6 +59,35 @@ class Hydrant(nn.Module):
             self.net.fc_pitch_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
                                                                ('final', nn.Linear(self.n_features, 1))]))
 
+        elif architecture == 'resnext':
+            self.net = resnext50_32x4d(weights=ResNeXt50_32X4D_Weights.IMAGENET1K_V2)
+            self.n_features = self.net.fc.in_features
+            self.net.fc = nn.Identity()
+            self.net.fc_yaw_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
+                                                             ('final', nn.Linear(self.n_features, 1))]))
+            self.net.fc_pitch_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
+                                                               ('final', nn.Linear(self.n_features, 1))]))
+
+        elif architecture == 'resnet':
+            self.net = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+            self.n_features = self.net.fc.in_features
+            self.net.fc = nn.Identity()
+            self.net.fc_yaw_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
+                                                             ('final', nn.Linear(self.n_features, 1))]))
+            self.net.fc_pitch_reg = nn.Sequential(OrderedDict([('dropout2', nn.Dropout(p=0.2)),
+                                                               ('final', nn.Linear(self.n_features, 1))]))
+        elif architecture == 'regnet':
+            self.net = regnet_y_800mf(weights=RegNet_Y_800MF_Weights.IMAGENET1K_V2)
+            self.n_features = self.net.fc.in_features
+            self.net.fc = nn.Identity()
+            self.net.fc_yaw_reg = nn.Sequential(OrderedDict([
+                                                             ('final', nn.Linear(self.n_features, 1))]))
+            self.net.fc_pitch_reg = nn.Sequential(OrderedDict([
+                                                               ('final', nn.Linear(self.n_features, 1))]))
+
+
+
+
         else:
             raise ValueError(f"{architecture} is not implemented yet.")
 
@@ -74,11 +107,11 @@ if __name__ == '__main__':
     META_LR = 5e-5
     INNER_LOOP_LR = 1e-5
     EPOCHS = 30
-    INNER_STEPS = 2
+    INNER_STEPS = 5
     SUPPORT_SIZE = 20
     QUERY_SIZE = 30
 
-    task = clearml.Task.init(project_name="meta", task_name="hydrant_b0_initial", tags="v2")
+    task = clearml.Task.init(project_name="meta", task_name="hydrant_regnet_contd", tags="v2")
     logger = task.get_logger()
     parameters = task.connect({})
     parameters['meta_batch_size'] = META_BATCH_SIZE
@@ -91,6 +124,7 @@ if __name__ == '__main__':
 
 
     transformations = transforms.Compose([
+        transforms.Resize(224),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225] # RGB
@@ -98,7 +132,9 @@ if __name__ == '__main__':
     ])
     device = torch.device('cuda')
 
-    model = Hydrant("efficientnet_b0")
+    model = Hydrant("regnet")
+    state_dict = torch.load("/home/janek/software/L2CS-Net/models/hydrant_regnet/model_epoch10_state_dict.pkl")
+    model.load_state_dict(state_dict)
     model.to(device)
 
     reg_criterion = nn.L1Loss().cuda(device)
@@ -111,8 +147,8 @@ if __name__ == '__main__':
                          nshot_support=SUPPORT_SIZE, n_query=QUERY_SIZE,
                          transforms=transformations)
 
-    meta_train = Subset(data, range(int(.8*len(data))))
-    meta_test = Subset(data, range(int(.8*len(data)), len(data)))
+    meta_train = Subset(data, range(int(.99*len(data))))
+    meta_test = Subset(data, range(int(.99*len(data)), len(data)))
 
 
     meta_train_loader = DataLoader(dataset=meta_train,
@@ -130,8 +166,10 @@ if __name__ == '__main__':
     meta_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(meta_optimizer, T_max=len(meta_train_loader), eta_min=0)
 
     iters = 0
-    for epoch in range(EPOCHS):
+    for epoch in range(11, EPOCHS):
         model.train()
+        # to resume training epoch + OFFSET (last saved epoch)
+        importance_vector = get_per_step_loss_importance_vector(epoch, device, INNER_STEPS, EPOCHS)
 
         for i, (b_s_im, b_s_lc, b_s_lb, b_q_im, b_q_lc, b_q_lb) in enumerate(meta_train_loader):
             print(f"Iter {i+1} / {len(meta_train_loader.dataset)}")
@@ -164,7 +202,6 @@ if __name__ == '__main__':
 
                 # setup model
                 # model.zero_grad()
-                importance_vector = get_per_step_loss_importance_vector(epoch, device, INNER_STEPS, EPOCHS)
                 losses = []
                 with higher.innerloop_ctx(model, inner_optimizer, copy_initial_weights=False) as (fnet, diffopt):
                     for step_number in range(INNER_STEPS):
@@ -185,7 +222,6 @@ if __name__ == '__main__':
 
                         # Total loss
                         losses.append(q_loss_reg_pitch + q_loss_reg_yaw)
-
                 outer_loss = 0
                 for s in range(INNER_STEPS):
                     outer_loss += importance_vector[s]*losses[s]
@@ -197,6 +233,6 @@ if __name__ == '__main__':
             print(sum(qry_accs) / len(qry_accs))
             logger.report_scalar("Query", "Loss", iteration=iters, value=(sum(qry_accs) / len(qry_accs)))
             logger.report_scalar("Params", "LR", iteration=iters, value=meta_scheduler.get_last_lr()[0])
-            # meta_scheduler.step()
+            meta_scheduler.step()
 
-        torch.save(model.state_dict(), os.path.join("/home/janek/software/L2CS-Net/models/hydrant_effb3", f"model_epoch{epoch}_state_dict.pkl"))
+        torch.save(model.state_dict(), os.path.join("/home/janek/software/L2CS-Net/models/hydrant_regnet", f"model_epoch{epoch}_state_dict.pkl"))

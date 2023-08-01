@@ -78,10 +78,10 @@ def apply_grad(model, grad):
 if __name__ == '__main__':
 
     META_BATCH_SIZE = 1
-    META_LR = 4e-5
+    META_LR = 1e-5
     INNER_LOOP_LR = 1e-5
     EPOCHS = 30
-    INNER_STEPS = 5
+    INNER_STEPS = 30
     SUPPORT_SIZE = 20
     QUERY_SIZE = 30
 

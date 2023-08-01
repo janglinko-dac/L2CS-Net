@@ -12,7 +12,8 @@ class WETMetaLoader(Dataset):
 
     def __init__(self, root: str, annotations: str,
                  nshot_support: int, n_query: int,
-                 transforms: t.Compose =None, evaluate_gc=False) -> None:
+                 angles_range: int =28, bin_resolution: int =3,
+                 transforms: t.Compose =None) -> None:
         '''
         WET Meta-Learning data loader. Each video is treated as a separate task.
 
@@ -38,11 +39,12 @@ class WETMetaLoader(Dataset):
         self._nshot_support = nshot_support
         self._n_query = n_query
 
+        self._angles_range = angles_range
+        self._bin_resolution = bin_resolution
+
         # read all tasks from the directory
         self._tasks = None
         self._get_tasks()
-
-        self._evaluate_gc = evaluate_gc
 
     def __len__(self):
         return len(self._tasks)
@@ -61,15 +63,10 @@ class WETMetaLoader(Dataset):
         # #! For the benchmarking, take always the same ammount, from the end
         # query_set = data_points[-self._n_query:]
         #! Try random sampling - these are tasks
-        if self._evaluate_gc:
-            query_set = data_points[-self._n_query:]
-            support_set = data_points[:-self._n_query]
-            support_set = random.sample(support_set, self._nshot_support)
-        else:
-            support_set = random.sample(data_points, self._nshot_support)
-            query_set = list(set(data_points) - set(support_set))
-            if len(query_set) > self._n_query:
-                query_set = random.sample(query_set, self._n_query)
+        support_set = random.sample(data_points, self._nshot_support)
+        query_set = list(set(data_points) - set(support_set))
+        if len(query_set) > self._n_query:
+            query_set = random.sample(query_set, self._n_query)
         # query_set = data_points[self._nshot_support:(self._nshot_support+self._n_query)]
 
 

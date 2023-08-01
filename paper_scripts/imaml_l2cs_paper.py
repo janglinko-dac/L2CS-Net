@@ -226,19 +226,19 @@ def outer_step_with_grad(model, optimizer, grad, flat_grad=False):
 if __name__ == '__main__':
 
     META_BATCH_SIZE = 1
-    META_LR = 5e-5
-    INNER_LOOP_LR = 1e-5
+    META_LR = 1e-5
+    INNER_LOOP_LR = 5e-6
     EPOCHS = 30
     INNER_STEPS = 30
     SUPPORT_SIZE = 20
     QUERY_SIZE = 30
 
-    LAMB = 30
+    LAMB = 2
     N_CG = 10
     CG_DAMPING = 1.0
     LAM_DAMPING = 10.0
 
-    task = clearml.Task.init(project_name="meta", task_name="l2cs_imaml", tags="v2")
+    task = clearml.Task.init(project_name="meta", task_name="l2cs_imaml_paper", tags="v2")
     logger = task.get_logger()
     parameters = task.connect({})
     parameters['meta_batch_size'] = META_BATCH_SIZE

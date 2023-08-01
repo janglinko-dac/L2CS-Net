@@ -101,7 +101,7 @@ def getArch(arch,bins):
 if __name__ == '__main__':
     CALIBRATION_SET_SIZE = 30
     INNER_LOOP_LR = 1e-5
-    INNER_STEPS = 6
+    INNER_STEPS = 10
 
     BATCH1 = False
 
@@ -134,11 +134,11 @@ if __name__ == '__main__':
 
     pitch_steps = []
     yaw_steps = []
-    steps = [2, 3, 5, 10, 15, 20, 30]
-    # steps = [20, 30]
+    # steps = [2, 3, 5, 10, 15, 20, 30]
+    steps = [20, 30]
 
 
-    for support_size in steps:
+    for model_id in range(79, 80):
         losses_pitch = []
         losses_yaw = []
         for subject in subjects:
@@ -146,7 +146,7 @@ if __name__ == '__main__':
             if len(images) < 140:
                 continue
 
-            calibration_samples = images[:support_size]
+            calibration_samples = images[:CALIBRATION_SET_SIZE]
             test_samples = images[CALIBRATION_SET_SIZE:CALIBRATION_SET_SIZE+100]
 
             support_cont = []
@@ -212,10 +212,10 @@ if __name__ == '__main__':
             support_images = transforms(support_images)
             query_images = transforms(query_images)
 
-            # model = torch.load("/home/janek/software/L2CS-Net/models/meta/model_epoch29.pkl")
-            # model = nn.DataParallel(model, device_ids=[0])
-            # model.train()
-            # model.to(device)
+            model = torch.load(f"/home/janek/software/L2CS-Net/models/l2cs_maml_random_sample_user/model_epoch{str(model_id)}.pkl")
+            model = nn.DataParallel(model, device_ids=[0])
+            model.train()
+            model.to(device)
 
             #! L2CS-Net
             # model= getArch("ResNet18", 28)
@@ -230,11 +230,11 @@ if __name__ == '__main__':
             # model.to(device)
 
             #! Hydrant (ours)
-            model = Hydrant("efficientnet_b0")
-            state_dict = torch.load("/home/janek/software/L2CS-Net/models/hydrant_effb3/model_epoch23_state_dict.pkl")
-            model.load_state_dict(state_dict)
-            model.train()
-            model.to(device)
+            # model = Hydrant("efficientnet_b0")
+            # state_dict = torch.load("/home/janek/software/L2CS-Net/models/hydrant_effb3/model_epoch23_state_dict.pkl")
+            # model.load_state_dict(state_dict)
+            # model.train()
+            # model.to(device)
 
             # model = getArch("ResNet18", 28)
             # saved_state_dict = torch.load("/home/janek/software/L2CS-Net/output/snapshots/legacy_verification/best.pkl")
@@ -290,13 +290,13 @@ if __name__ == '__main__':
 
                 optimizer.step()
 
-            model.eval()
-            for m in model.modules():
-                    for child in m.children():
-                        if type(child) == nn.BatchNorm2d:
-                            child.track_running_stats = False
-                            child.running_mean = None
-                            child.running_var = None
+            # model.eval()
+            # for m in model.modules():
+            #         for child in m.children():
+            #             if type(child) == nn.BatchNorm2d:
+            #                 child.track_running_stats = False
+            #                 child.running_mean = None
+            #                 child.running_var = None
 
             if BATCH1:
                 for q_image, q_label_pitch_cont, q_label_yaw_cont in zip(q_im, q_label_pitch_cont_gaze, q_label_yaw_cont_gaze):

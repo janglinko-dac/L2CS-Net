@@ -4,7 +4,6 @@ output/
 models/
 __pycache__
 runs/
-.*
 *net.egg-info
 data_selector/tests/data/new_train_dataset
 data_selector/tests/data/new_val_dataset
